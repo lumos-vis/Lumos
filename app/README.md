@@ -11,7 +11,7 @@ This folder contains the Lumos frontend code.
      - Be careful of conflicting with existing installations of Node.js on your machine!
    - By installing Node.js, you also get [npm](https://www.npmjs.com/), which is a command line executable for downloading and managing Node.js packages.
 - `npm install -g @angular/cli@7` - Install compatible [angular-cli](https://cli.angular.io/)
-- `export NODE_OPTIONS=--openssl-legacy-provider`
+- `export NODE_OPTIONS=--openssl-legacy-provider` (use `set` instead of `export` for Windows)
 - `npm install --legacy-peer-deps` installs all dependencies and devDependencies from package.json
 
 ## Run
