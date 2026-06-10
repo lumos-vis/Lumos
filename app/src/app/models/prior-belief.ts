@@ -7,10 +7,11 @@ export interface Bin {
 export interface PriorBelief {
   datasetId: string;
   attribute: string;
-  binEdges: number[];   
-  counts: number[];    
+  binEdges: number[];
+  counts: number[];
   ballCount: number;
-  columnHash: string;  
+  columnHash: string;
   createdAt: number;
+  categories?: string[];  // present for categorical attributes; one entry per bin
 }
 

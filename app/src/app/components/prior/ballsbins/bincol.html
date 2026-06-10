@@ -17,9 +17,9 @@
 
   <!-- hold to repeat; count rolls up/down to show direction -->
   <div class="controls">
-    <button (mousedown)="startHold('decrement')" (mouseup)="stopHold()" (mouseleave)="stopHold()" [disabled]="count === 0">−</button>
+    <button (mousedown)="startHold('decrement')" (mouseup)="stopHold()" (mouseleave)="stopHold()" [disabled]="count === 0" [class.is-held]="isHeld === 'decrement'">−</button>
     <span class="count">{{ count }}</span>
-    <button (mousedown)="startHold('increment')" (mouseup)="stopHold()" (mouseleave)="stopHold()" [disabled]="remaining === 0">+</button>
+    <button (mousedown)="startHold('increment')" (mouseup)="stopHold()" (mouseleave)="stopHold()" [disabled]="remaining === 0" [class.is-held]="isHeld === 'increment'">+</button>
   </div>
 
   <div class="label">{{ bin.label }}</div>

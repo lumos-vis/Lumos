@@ -9,6 +9,7 @@ import { BinningService } from 'src/app/services/binning.service';
 export class BallsIntoBinsComponent implements OnInit, OnChanges {
   @Input() values: number[] = [];
   @Input() initialCounts: number[] = [];
+  @Input() fixedBins: Bin[] = [];   // when set, skips computation from values
   @Output() countsChange = new EventEmitter<number[]>();
 
   bins: Bin[] = [];
@@ -17,10 +18,15 @@ export class BallsIntoBinsComponent implements OnInit, OnChanges {
   constructor(public binningService: BinningService) {}
 
   ngOnInit() {
-    if (this.values.length > 0) {
+    if (this.fixedBins.length > 0) {
+      this.bins = this.fixedBins;
+    } else if (this.values.length > 0) {
       this.bins = this.binningService.computeBins(this.values);
     }
-    this.counts = this.initialCounts.length > 0 ? this.initialCounts.slice() : this.binningService.emptyBallCounts();
+    const emptyLen = this.bins.length || this.binningService.binCount;
+    this.counts = this.initialCounts.length > 0
+      ? this.initialCounts.slice()
+      : this.binningService.emptyCountsFor(emptyLen);
   }
 
   ngOnChanges(changes: SimpleChanges) {

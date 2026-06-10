@@ -2,6 +2,10 @@
   width: 100%;
 }
 
+.balls-into-bins.categorical {
+  width: auto;
+}
+
 .grid {
   display: flex;
   gap: 6px;
@@ -9,4 +13,12 @@
   min-width: 600px;
   width: 100%;
   justify-content: space-between;
+}
+
+.grid.categorical {
+  min-width: unset;
+  width: auto;
+  justify-content: center;
+  gap: 24px;
+  margin: 0 auto;
 }

@@ -17,8 +17,7 @@
   border-radius: 4px;
   width: 90vw;
   max-width: 1000px;
-  max-height: 95vh;
-  overflow-y: auto;
+  overflow: visible;
   box-shadow: 6px 6px 0 rgba(0,0,0,0.12);
   display: flex;
   flex-direction: column;
@@ -95,6 +94,20 @@
   gap: 8px;
 }
 
+.attr-group-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8a8a85;
+  margin-bottom: 6px;
+  margin-top: 10px;
+}
+
+.attr-group-label:first-child {
+  margin-top: 0;
+}
+
 .attribute-list {
   list-style: none;
   padding: 0;
@@ -149,6 +162,8 @@
   border-radius: 4px;
   overflow-x: auto;
   overflow-y: hidden;
+  display: flex;
+  justify-content: center;
 }
 
 .modal-back-title {

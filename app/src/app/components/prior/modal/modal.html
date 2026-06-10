@@ -29,16 +29,32 @@
 
       <!-- attribute picker -->
       <div *ngIf="!selectedAttribute">
-        <ul class="attribute-list">
-          <li
-            *ngFor="let attr of attributes"
-            (click)="selectAttribute(attr)"
-            class="attribute-item"
-            [class.done]="hasPrior(attr)"
-          >
-            <span *ngIf="hasPrior(attr)">✓ </span>{{ attr }}
-          </li>
-        </ul>
+        <div *ngIf="attributes.length > 0">
+          <div class="attr-group-label">Quantitative</div>
+          <ul class="attribute-list">
+            <li
+              *ngFor="let attr of attributes"
+              (click)="selectAttribute(attr)"
+              class="attribute-item"
+              [class.done]="hasPrior(attr)"
+            >
+              <span *ngIf="hasPrior(attr)">✓ </span>{{ attr }}
+            </li>
+          </ul>
+        </div>
+        <div *ngIf="(categoricalValues | keyvalue).length > 0" style="margin-top: 12px">
+          <div class="attr-group-label">Categorical</div>
+          <ul class="attribute-list">
+            <li
+              *ngFor="let entry of categoricalValues | keyvalue"
+              (click)="selectAttribute(entry.key)"
+              class="attribute-item"
+              [class.done]="hasPrior(entry.key)"
+            >
+              <span *ngIf="hasPrior(entry.key)">✓ </span>{{ entry.key }}
+            </li>
+          </ul>
+        </div>
       </div>
 
       <!--  balls and bins ui -->
@@ -47,6 +63,7 @@
         <div class="histogram-box">
           <app-balls-into-bins
             [values]="currentValues"
+            [fixedBins]="currentFixedBins"
             [initialCounts]="draftCounts"
             (countsChange)="onCountsChange($event)"
           ></app-balls-into-bins>

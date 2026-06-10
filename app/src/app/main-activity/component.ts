@@ -113,6 +113,21 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
     return result;
   }
 
+  getCategoricalValues(): Record<string, string[]> {
+    const data = this.userConfig["originalDataset"];
+    if (!data) return {};
+    const dtl = this.appConfig[this.global.appMode]?.attributeDatatypeList;
+    if (!dtl) return {};
+    const catAttrs: string[] = (dtl['N'] || []).concat(dtl['O'] || []);
+    const result: Record<string, string[]> = {};
+    catAttrs.forEach(attr => {
+      const seen = new Set<string>();
+      data.forEach(row => { if (row[attr] != null) seen.add(String(row[attr])); });
+      result[attr] = Array.from(seen).sort();
+    });
+    return result;
+  }
+
   /** ====================== INITIALIZATION METHODS ======================= */
 
   /**

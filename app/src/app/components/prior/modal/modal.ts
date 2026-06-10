@@ -1,5 +1,5 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
-import { PriorBelief } from '../../../models/prior-belief';
+import { Bin, PriorBelief } from '../../../models/prior-belief';
 import { PriorBeliefStore } from '../../../store/prior-belief.store';
 import { BinningService } from '../../../services/binning.service';
 
@@ -12,6 +12,7 @@ export class ElicitationModalComponent {
   @Input() datasetId: string = '';
   @Input() attributes: string[] = [];
   @Input() columnValues: Record<string, number[]> = {};
+  @Input() categoricalValues: Record<string, string[]> = {};
 
   @Output() closed = new EventEmitter<void>();
 
@@ -23,9 +24,22 @@ export class ElicitationModalComponent {
     public binningService: BinningService
   ) {}
 
+  get allAttributes(): string[] {
+    return this.attributes.concat(Object.keys(this.categoricalValues));
+  }
+
+  isCategorical(attr: string): boolean {
+    return attr in this.categoricalValues;
+  }
+
   get currentValues(): number[] {
-    if (!this.selectedAttribute) return [];
+    if (!this.selectedAttribute || this.isCategorical(this.selectedAttribute)) return [];
     return this.columnValues[this.selectedAttribute] || [];
+  }
+
+  get currentFixedBins(): Bin[] {
+    if (!this.selectedAttribute || !this.isCategorical(this.selectedAttribute)) return [];
+    return this.binningService.categoricalBins(this.categoricalValues[this.selectedAttribute]);
   }
 
   get remaining(): number {
@@ -35,9 +49,15 @@ export class ElicitationModalComponent {
   selectAttribute(attr: string) {
     this.selectedAttribute = attr;
     const existing = this.store.getBelief(this.datasetId, attr);
-    this.draftCounts = existing ? existing.counts.slice() : this.binningService.emptyBallCounts();
+    if (existing) {
+      this.draftCounts = existing.counts.slice();
+    } else if (this.isCategorical(attr)) {
+      this.draftCounts = this.binningService.emptyCountsFor(this.categoricalValues[attr].length);
+    } else {
+      this.draftCounts = this.binningService.emptyBallCounts();
+    }
   }
-  // a and b classes alternate to trigger CSS animations on count change
+
   counterClass: 'pop-a' | 'pop-b' = 'pop-a';
 
   onCountsChange(counts: number[]) {
@@ -48,24 +68,42 @@ export class ElicitationModalComponent {
   hasPrior(attr: string): boolean {
     return !!this.store.getBelief(this.datasetId, attr);
   }
-  // resets the counts for the currently selected attribute to empty
-  // does not remove from store
+
   reset() {
-    this.draftCounts = this.binningService.emptyBallCounts();
+    if (this.selectedAttribute && this.isCategorical(this.selectedAttribute)) {
+      this.draftCounts = this.binningService.emptyCountsFor(this.categoricalValues[this.selectedAttribute].length);
+    } else {
+      this.draftCounts = this.binningService.emptyBallCounts();
+    }
   }
 
   save() {
     if (!this.selectedAttribute) return;
-    const bins = this.binningService.computeBins(this.currentValues);
-    const belief: PriorBelief = {
-      datasetId: this.datasetId,
-      attribute: this.selectedAttribute,
-      binEdges: bins.map(b => b.lo).concat(bins[bins.length - 1].hi),
-      counts: this.draftCounts,
-      ballCount: this.binningService.ballCount,
-      columnHash: '',
-      createdAt: Date.now()
-    };
+    let belief: PriorBelief;
+    if (this.isCategorical(this.selectedAttribute)) {
+      const cats = this.categoricalValues[this.selectedAttribute];
+      belief = {
+        datasetId: this.datasetId,
+        attribute: this.selectedAttribute,
+        binEdges: cats.map((_, i) => i).concat(cats.length),
+        counts: this.draftCounts,
+        ballCount: this.binningService.ballCount,
+        columnHash: '',
+        createdAt: Date.now(),
+        categories: cats
+      };
+    } else {
+      const bins = this.binningService.computeBins(this.currentValues);
+      belief = {
+        datasetId: this.datasetId,
+        attribute: this.selectedAttribute,
+        binEdges: bins.map(b => b.lo).concat(bins[bins.length - 1].hi),
+        counts: this.draftCounts,
+        ballCount: this.binningService.ballCount,
+        columnHash: '',
+        createdAt: Date.now()
+      };
+    }
     this.store.setBelief(belief);
     this.selectedAttribute = null;
     this.draftCounts = [];

@@ -19,6 +19,7 @@ export class BinColumnComponent implements OnChanges {
   rows: number[] = [];
   dragging = false;
 
+  isHeld: 'increment' | 'decrement' | null = null;
   private holdTimeout: any = null;
   private holdInterval: any = null;
 
@@ -28,6 +29,7 @@ export class BinColumnComponent implements OnChanges {
 
   // fire once immediately, then repeat after a short delay while held
   startHold(action: 'increment' | 'decrement') {
+    this.isHeld = action;
     this.fireAction(action);
     this.holdTimeout = setTimeout(() => {
       this.holdInterval = setInterval(() => this.fireAction(action), 80);
@@ -36,6 +38,7 @@ export class BinColumnComponent implements OnChanges {
 
   // clean up timers when the button is released or the cursor leaves
   stopHold() {
+    this.isHeld = null;
     clearTimeout(this.holdTimeout);
     clearInterval(this.holdInterval);
     this.holdTimeout = null;

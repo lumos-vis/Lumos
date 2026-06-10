@@ -907,6 +907,7 @@
     [datasetId]="global.appMode"
     [attributes]="appConfig[global.appMode]?.attributeDatatypeList?.Q || []"
     [columnValues]="getColumnValues()"
+    [categoricalValues]="getCategoricalValues()"
     (closed)="showPriorModal = false"
   ></app-elicitation-modal>
 </div>

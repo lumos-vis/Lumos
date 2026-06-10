@@ -31,6 +31,14 @@ export class BinningService {
   emptyBallCounts(): number[] {
     return new Array(BIN_COUNT).fill(0);
   }
+
+  emptyCountsFor(n: number): number[] {
+    return new Array(n).fill(0);
+  }
+
+  categoricalBins(categories: string[]): Bin[] {
+    return categories.map((cat, i) => ({ lo: i, hi: i + 1, label: cat }));
+  }
   // formatting the label of bin based on step size
   // step >= 10: no decimal places
   // step >= 1: 1 decimal place
