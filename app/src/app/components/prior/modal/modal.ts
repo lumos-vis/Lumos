@@ -2,6 +2,8 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { Bin, PriorBelief } from '../../../models/prior-belief';
 import { PriorBeliefStore } from '../../../store/prior-belief.store';
 import { BinningService } from '../../../services/binning.service';
+import { ChatService } from '../../../services/socket.service';
+import { SessionPage } from '../../../models/config';
 
 @Component({
   selector: 'app-elicitation-modal',
@@ -21,7 +23,9 @@ export class ElicitationModalComponent {
 
   constructor(
     private store: PriorBeliefStore,
-    public binningService: BinningService
+    public binningService: BinningService,
+    private chatService: ChatService,
+    private global: SessionPage
   ) {}
 
   get allAttributes(): string[] {
@@ -105,6 +109,16 @@ export class ElicitationModalComponent {
       };
     }
     this.store.setBelief(belief);
+    // Incrementally transport the just-saved prior to the server (Option A) so
+    // it's available to the JS confirmation-bias metric. Keyed by attribute
+    // server-side, last-write-wins.
+    this.chatService.sendPriors({
+      participantId: this.global.participantId,
+      appMode: this.global.appMode,
+      appType: this.global.appType,
+      appLevel: this.global.appLevel,
+      priors: belief,
+    });
     this.selectedAttribute = null;
     this.draftCounts = [];
   }

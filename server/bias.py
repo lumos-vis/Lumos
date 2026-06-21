@@ -15,6 +15,7 @@ from scipy.stats import chisquare
 from scipy.stats import ks_2samp
 
 import bias_util
+from js_divergence import js_confirmation_score
 
 NUM_QUANTILES = 4
 MIN_LOG_NUM = 10
@@ -156,8 +157,16 @@ def read_data(filename):
         print(f"done")
 
 
-def compute_metrics(filename, logs):
+def compute_metrics(filename, logs, priors=None):
     """Compute all of the bias metrics.
+
+    Args:
+        filename: dataset key into DATA_MAP, e.g. "credit_risk.csv".
+        logs: the participant's bias-relevant interaction logs.
+        priors: optional {attribute: PriorBelief} elicited via balls-into-bins.
+            When absent/empty, the JS confirmation metric returns {} (priors are
+            usually committed before any interaction, and not every attribute
+            will have one).
 
     Return results in a dictionary mapping metric name to result.
     """
@@ -178,6 +187,12 @@ def compute_metrics(filename, logs):
         dataset["distribution"],
         dataset["numerical_attributes"],
     )
+    js = js_divergence(
+        logs,
+        dataset["data"],
+        priors,
+        dataset["numerical_attributes"],
+    )
 
     # Prepare the payload and round metrics to 4 decimal places
     metrics = {
@@ -185,6 +200,7 @@ def compute_metrics(filename, logs):
         "data_point_distribution": dpd,
         "attribute_coverage": ac,
         "attribute_distribution": ad,
+        "js_divergence": js,
     }
 
     return metrics
@@ -518,3 +534,113 @@ def attribute_distribution(logs, active_data, active_attrs, active_attr_distr, a
                 ad_details[attr]["p_value"] = chi_squared_result[1]
 
     return ad_metric, ad_details
+
+
+def _bucket_numerical(bin_edges, val):
+    """Return the index of the bin (defined by bin_edges) that val falls in.
+
+    bin_edges has len == num_bins + 1. Values outside the elicited range are
+    clamped into the nearest edge bin rather than dropped, so out-of-range
+    interactions still contribute to the interaction distribution.
+    """
+    num_bins = len(bin_edges) - 1
+    if val <= bin_edges[0]:
+        return 0
+    if val >= bin_edges[-1]:
+        return num_bins - 1
+    for i in range(num_bins):
+        # left-closed, right-open except the final bin which is closed above
+        if bin_edges[i] <= val < bin_edges[i + 1]:
+            return i
+    return num_bins - 1  # numeric safety net
+
+
+def js_divergence(logs, active_data, priors, numerical_attrs):
+    """Compute the JS confirmation-bias metric for each attribute with a prior.
+
+    Sibling of attribute_distribution, but it compares the user's interactions
+    against their *elicited prior* (not the underlying data). For each attribute
+    that has a prior it buckets every interacted point's value -- resolved by id
+    via active_data[id][attr], ignoring the payload's on-screen x/y -- into the
+    SAME bins the prior was elicited over, then calls the standalone
+    js_confirmation_score().
+
+    Bucketing:
+        numerical   -> assign cast_to_num(value) into prior["binEdges"],
+                       clamping out-of-range values into the nearest edge bin.
+        categorical -> match str(value) against prior["categories"]; categories
+                       that were never interacted with stay at zero, and
+                       interacted values not in the prior's categories are
+                       dropped (the prior defines the bin set on both sides).
+    Aggregate interactions contribute each member id with weight 1/len(ids).
+
+    Returns a tuple of
+        (1) dictionary mapping attribute name to [0, 1] score (small JS distance
+            => high confirmation bias => high score), and
+        (2) dictionary mapping attribute name to per-attribute detail.
+
+    Returns ({}, {}) when no priors are present (the usual case before the user
+    has committed any beliefs, mirroring the defensive posture elsewhere).
+    """
+    js_metric = {}
+    js_details = {}
+
+    if not priors:
+        return js_metric, js_details
+
+    for attr, belief in priors.items():
+        is_categorical = "categories" in belief and belief["categories"] is not None
+        categories = belief.get("categories") or []
+        bin_edges = belief.get("binEdges") or []
+        prior_counts = belief.get("counts") or []
+
+        # number of bins is defined by the prior
+        num_bins = len(categories) if is_categorical else max(len(bin_edges) - 1, 0)
+        if num_bins == 0 or len(prior_counts) != num_bins:
+            # malformed prior -- skip rather than emit a misaligned score
+            continue
+
+        # category label -> bin index, for categorical matching
+        cat_index = {str(c): i for i, c in enumerate(categories)} if is_categorical else {}
+
+        interaction_counts = [0.0] * num_bins
+        log_counter = 0.0
+        for log in logs:
+            if "data" not in log or "id" not in log["data"]:
+                continue
+            ids = log["data"]["id"]
+            if isinstance(ids, list):  # aggregate interaction
+                if not ids:
+                    continue
+                weight = 1.0 / len(ids)
+                id_list = ids
+            else:
+                weight = 1.0
+                id_list = [ids]
+
+            for pid in id_list:
+                if pid not in active_data or attr not in active_data[pid]:
+                    continue
+                raw = active_data[pid][attr]
+                if is_categorical:
+                    idx = cat_index.get(str(raw))
+                    if idx is None:
+                        # interacted value isn't a bin the prior defined -> drop
+                        continue
+                else:
+                    idx = _bucket_numerical(bin_edges, bias_util.cast_to_num(raw))
+                interaction_counts[idx] += weight
+                log_counter += weight
+
+        score = js_confirmation_score(prior_counts, interaction_counts)
+        js_metric[attr] = float(f"{score:.4f}")
+
+        js_details[attr] = {
+            "is_categorical": is_categorical,
+            "bins": categories if is_categorical else bin_edges,
+            "prior_counts": prior_counts,
+            "interaction_counts": interaction_counts,
+            "k(num_dp_logs)": log_counter,
+        }
+
+    return js_metric, js_details

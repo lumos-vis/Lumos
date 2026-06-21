@@ -36,6 +36,10 @@ export class ChatService {
     this.vizSocket.emit("on_interaction", payload);
   }
 
+  sendPriors(payload) {
+    this.vizSocket.emit("on_commit_priors", payload);
+  }
+
   getDisconnectEventResponse() {
     return this.vizSocket.fromEvent("disconnect").pipe(map((obj) => obj));
   }

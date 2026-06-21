@@ -14,6 +14,11 @@ import bias_util
 # Set the path for the Google Cloud Logging logger
 currdir = Path(__file__).parent.absolute()
 
+# Debug toggle: when True, on_interaction streams the per-attribute JS
+# confirmation-bias scores to stdout. Off by default; flip on when building/
+# debugging the next layer.
+JS_DEBUG = False
+
 CLIENTS = {}  # entire data map of all client data
 CLIENT_PARTICIPANT_ID_SOCKET_ID_MAPPING = {}
 CLIENT_SOCKET_ID_PARTICIPANT_MAPPING = {}
@@ -103,15 +108,14 @@ async def on_save_logs(sid, data):
 
             print(f"Saved logs to file: {filename}")
 
-@SIO.event
-async def on_interaction(sid, data):
-    app_mode = data["appMode"]  # The dataset that is being used, e.g. cars.csv
-    app_type = data["appType"]  # CONTROL / AWARENESS / ADMIN
-    app_level = data["appLevel"]  # live / practice
-    pid = data["participantId"]
-    interaction_type = data["interactionType"] # Interaction type - eg. hover, click
+def ensure_client(sid, pid, app_mode, app_type, app_level):
+    """Get-or-create the per-participant record, applying dataset/level resets.
 
-    # Let these get updated everytime an interaction occurs, to handle the
+    Shared by on_interaction and on_commit_priors so both entry points
+    initialize the same record the same way (and so priors committed *before*
+    any interaction still land in a well-formed record). Returns the record.
+    """
+    # Let these get updated everytime an event occurs, to handle the
     #   worst case scenario of random restart of the server.
     CLIENT_SOCKET_ID_PARTICIPANT_MAPPING[sid] = pid
     CLIENT_PARTICIPANT_ID_SOCKET_ID_MAPPING[pid] = sid
@@ -127,15 +131,57 @@ async def on_interaction(sid, data):
         CLIENTS[pid]["connected_at"] = bias_util.get_current_time()
         CLIENTS[pid]["bias_logs"] = []
         CLIENTS[pid]["response_list"] = []
+        CLIENTS[pid]["priors"] = {}  # {attribute: PriorBelief}, last-write-wins
 
     if app_mode != CLIENTS[pid]["app_mode"] or app_level != CLIENTS[pid]["app_level"]:
         # datasets have been switched => reset the logs array!
         # OR
         # app_level (e.g. practice > live) is changed but same dataset is in use => reset the logs array!
+        # Priors are per-dataset, so a dataset/level switch invalidates them too.
         CLIENTS[pid]["app_mode"] = app_mode
         CLIENTS[pid]["app_level"] = app_level
         CLIENTS[pid]["bias_logs"] = []
         CLIENTS[pid]["response_list"] = []
+        CLIENTS[pid]["priors"] = {}
+
+    return CLIENTS[pid]
+
+
+@SIO.event
+async def on_commit_priors(sid, data):
+    """Receive elicited prior beliefs and stash them per-participant.
+
+    Emitted by the frontend each time the user saves a prior in the
+    balls-into-bins modal (incremental, one attribute at a time). Stored under
+    CLIENTS[pid]["priors"] keyed by attribute, last-write-wins, so they are
+    available to bias.compute_metrics() for the JS confirmation-bias metric.
+    """
+    app_mode = data["appMode"]
+    app_type = data.get("appType")
+    app_level = data.get("appLevel")
+    pid = data["participantId"]
+
+    client = ensure_client(sid, pid, app_mode, app_type, app_level)
+
+    # Accept either a single PriorBelief or a list, keyed by attribute.
+    incoming = data.get("priors", [])
+    if isinstance(incoming, dict):
+        incoming = [incoming]
+    for belief in incoming:
+        client["priors"][belief["attribute"]] = belief
+
+    print(f"Committed priors for {pid} ({app_mode}): {sorted(client['priors'].keys())}")
+
+
+@SIO.event
+async def on_interaction(sid, data):
+    app_mode = data["appMode"]  # The dataset that is being used, e.g. cars.csv
+    app_type = data["appType"]  # CONTROL / AWARENESS / ADMIN
+    app_level = data["appLevel"]  # live / practice
+    pid = data["participantId"]
+    interaction_type = data["interactionType"] # Interaction type - eg. hover, click
+
+    ensure_client(sid, pid, app_mode, app_type, app_level)
 
     # record response to interaction
     response = {}
@@ -151,8 +197,22 @@ async def on_interaction(sid, data):
     # check whether to compute bias metrics or not
     if interaction_type in COMPUTE_BIAS_FOR_TYPES:
         CLIENTS[pid]["bias_logs"].append(data)
-        metrics = bias.compute_metrics(app_mode, CLIENTS[pid]["bias_logs"])
+        metrics = bias.compute_metrics(app_mode, CLIENTS[pid]["bias_logs"], CLIENTS[pid]["priors"])
         response["output_data"] = metrics
+
+        # === JS DEBUG (toggle via JS_DEBUG flag near top of file) === start
+        # Read-only stream of the JS confirmation-bias scores already in
+        # output_data, one block per qualifying interaction. Off by default;
+        # flip JS_DEBUG to re-enable when building the next layer.
+        if JS_DEBUG:
+            _js_metric = metrics["js_divergence"][0]  # {attr: score} (drop details)
+            _n = len(CLIENTS[pid]["bias_logs"])
+            if _js_metric:
+                _scores = "  ".join(f"{a}={s}" for a, s in _js_metric.items())
+            else:
+                _scores = "(other attrs: no prior)"
+            print(f"[JS DEBUG] pid={pid} | n={_n} | {_scores}", flush=True)
+        # === JS DEBUG === end
     else:
         response["output_data"] = None
 
