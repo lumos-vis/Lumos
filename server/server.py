@@ -10,6 +10,7 @@ from aiohttp_index import IndexMiddleware
 
 import bias
 import bias_util
+import firebase_logger
 
 # Set the path for the Google Cloud Logging logger
 currdir = Path(__file__).parent.absolute()
@@ -100,13 +101,20 @@ async def on_save_logs(sid, data):
         if pid in CLIENTS:
             dirname = f"output/{CLIENTS[pid]['app_type']}/{pid}"
             Path(dirname).mkdir(exist_ok=True)
-            filename = f"output/{CLIENTS[pid]['app_type']}/{pid}/logs_{pid}_{bias_util.get_current_time()}.tsv"
+            ts = bias_util.get_current_time()
+
+            filename = f"{dirname}/logs_{pid}_{ts}.tsv"
             df_to_save = pd.DataFrame(CLIENTS[pid]["response_list"])
-
-            # persist to disk
             df_to_save.to_csv(filename, sep="\t")
-
             print(f"Saved logs to file: {filename}")
+            firebase_logger.save_logs(pid, CLIENTS[pid]["response_list"])
+
+            priors = CLIENTS[pid].get("priors", {})
+            if priors:
+                priors_filename = f"{dirname}/priors_{pid}_{ts}.tsv"
+                pd.DataFrame(priors.values()).to_csv(priors_filename, sep="\t", index=False)
+                print(f"Saved priors to file: {priors_filename}")
+            firebase_logger.save_priors(pid, priors)
 
 def ensure_client(sid, pid, app_mode, app_type, app_level):
     """Get-or-create the per-participant record, applying dataset/level resets.
@@ -171,6 +179,8 @@ async def on_commit_priors(sid, data):
         client["priors"][belief["attribute"]] = belief
 
     print(f"Committed priors for {pid} ({app_mode}): {sorted(client['priors'].keys())}")
+    firebase_logger.save_priors(pid, client["priors"])
+    firebase_logger.save_meta(pid, client)
 
 
 @SIO.event
@@ -221,6 +231,7 @@ async def on_interaction(sid, data):
 
     await SIO.emit("log", response)  # send this to all
     await SIO.emit("interaction_response", response, room=sid)
+    firebase_logger.save_logs(pid, [response])
 
 
 if __name__ == "__main__":
