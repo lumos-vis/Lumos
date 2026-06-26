@@ -81,6 +81,10 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
       if("level" in params){
         this.global.appLevel = params["level"];
       }
+      const validTypes = ["CONTROL", "AWARENESS", "ADMIN"];
+      if ("type" in params && validTypes.includes(params["type"])) {
+        this.global.appType = params["type"];
+      }
     });
     this.qFilterSliderConfig = (attribute) => {
       let attrConfig = this.appConfig[this.global.appMode]["attributes"][attribute];

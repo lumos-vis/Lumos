@@ -5,7 +5,9 @@ import { Injectable } from "@angular/core";
 import { UtilsService } from "../services/utils.service";
 
 var UtilsServiceObj = new UtilsService();
-var participantId = UtilsServiceObj.generateRandomUniqueString(12);
+var prolificId = new URLSearchParams(window.location.search).get("PROLIFIC_PID");
+var participantId = prolificId || UtilsServiceObj.generateRandomUniqueString(12);
+var participantIdSource = prolificId ? "prolific" : "random";
 
 export const divergentColorRange = ["#a5d6a7", "#eeeeee", "#ef9a9a"];
 export const sequentialColorRange = ["#ffffff", "#3498db"];
@@ -15,7 +17,8 @@ export class SessionPage {
   constructor(private utils: UtilsService) {}
   "app-practice": object = { completed: false, timestamp: 0 };
   "app-live": object = { completed: false, timestamp: 0 };
-  "participantId": string = participantId; // 12 character long unique identifier
+  "participantId": string = participantId;
+  "participantIdSource": string = participantIdSource; // "prolific" | "random"
   "appMode": string = "credit_risk.csv"; // Name of the dataset
   "appLevel": string = "live"; // Practice / Live
   // "appType": string = this.utils.generateRandomAppType(); // CONTROL / AWARENESS
