@@ -33,6 +33,17 @@ DATA_MAP = {
         ],
         "data": {},
     },
+    "mental_health_data.csv": {
+        "attributes": [],
+        "distribution": {},
+        "numerical_attributes": [
+            "child_age_years",
+            "screen_time_weekday",
+            "hours_sleep_weeknight",
+            "days_physical_activity_week",
+        ],
+        "data": {},
+    },
     "cars.csv": {
         "attributes": [],
         "distribution": {},

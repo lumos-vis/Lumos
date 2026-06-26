@@ -1,0 +1,201 @@
+id,child_age_years,child_sex,screen_time_weekday,hours_sleep_weeknight,days_physical_activity_week,difficulty_making_friends,ever_diagnosed_depression,ever_diagnosed_anxiety,ever_diagnosed_dep_or_anx
+teen1,14,Male,3,8,1,A little difficulty,No,Yes,Yes
+teen2,16,Male,2,7,2,No difficulty,No,No,No
+teen3,17,Female,3,8,3,No difficulty,No,No,No
+teen4,17,Female,7,8,1,A little difficulty,No,Yes,Yes
+teen5,15,Male,4,7,4,No difficulty,No,No,No
+teen6,17,Male,3,7,6,No difficulty,No,No,No
+teen7,15,Male,5,8,4,No difficulty,No,Yes,Yes
+teen8,17,Female,5,9,0,No difficulty,Yes,No,Yes
+teen9,14,Female,2,8,7,No difficulty,No,No,No
+teen10,14,Male,4,8,6,No difficulty,No,No,No
+teen11,14,Female,5,9,0,No difficulty,No,Yes,Yes
+teen12,15,Female,0,9,4,No difficulty,No,No,No
+teen13,16,Male,0,9,7,No difficulty,No,No,No
+teen14,16,Male,5,7,3,A little difficulty,No,No,No
+teen15,15,Female,1,7,2,A little difficulty,No,No,No
+teen16,13,Female,6,10,7,No difficulty,No,No,No
+teen17,15,Female,2,10,5,No difficulty,No,No,No
+teen18,15,Female,3,8,7,A little difficulty,No,No,No
+teen19,13,Male,3,8,6,No difficulty,No,No,No
+teen20,17,Male,6,7,6,No difficulty,No,No,No
+teen21,14,Male,3,8,4,A little difficulty,No,No,No
+teen22,17,Female,4,7,5,A little difficulty,No,Yes,Yes
+teen23,15,Female,4,7,2,No difficulty,No,No,No
+teen24,15,Female,2,9,0,No difficulty,No,No,No
+teen25,13,Female,2,8,3,No difficulty,No,No,No
+teen26,16,Male,2,6,7,No difficulty,No,No,No
+teen27,15,Female,0,8,4,No difficulty,No,No,No
+teen28,16,Female,3,9,3,No difficulty,No,Yes,Yes
+teen29,15,Female,3,5,2,No difficulty,No,No,No
+teen30,13,Female,2,7,3,No difficulty,No,No,No
+teen31,15,Female,1,7,5,A little difficulty,No,Yes,Yes
+teen32,13,Male,0,8,7,No difficulty,No,No,No
+teen33,13,Female,3,9,5,A little difficulty,No,No,No
+teen34,13,Female,1,9,1,A little difficulty,No,No,No
+teen35,15,Female,3,9,6,No difficulty,No,No,No
+teen36,13,Male,6,7,7,No difficulty,No,No,No
+teen37,14,Male,1,8,7,No difficulty,No,Yes,Yes
+teen38,16,Male,3,8,7,No difficulty,No,No,No
+teen39,13,Female,4,10,0,No difficulty,No,No,No
+teen40,16,Male,2,8,5,No difficulty,No,No,No
+teen41,14,Male,0,9,7,No difficulty,No,No,No
+teen42,17,Male,2,9,5,No difficulty,No,No,No
+teen43,14,Female,2,8,7,No difficulty,No,No,No
+teen44,16,Male,2,5,2,A little difficulty,No,Yes,Yes
+teen45,14,Female,3,8,0,A little difficulty,Yes,Yes,Yes
+teen46,17,Male,8,8,0,A lot of difficulty,No,No,No
+teen47,14,Male,3,7,0,A little difficulty,No,No,No
+teen48,17,Male,7,9,0,No difficulty,No,No,No
+teen49,15,Male,4,9,7,A little difficulty,No,Yes,Yes
+teen50,16,Male,2,7,0,A little difficulty,No,No,No
+teen51,14,Male,1,10,6,No difficulty,No,No,No
+teen52,15,Female,5,8,6,No difficulty,No,Yes,Yes
+teen53,16,Male,3,7,0,No difficulty,No,No,No
+teen54,17,Female,2,8,2,A little difficulty,No,No,No
+teen55,16,Female,6,7,0,A little difficulty,Yes,Yes,Yes
+teen56,14,Female,1,8,4,No difficulty,No,No,No
+teen57,17,Female,1,9,7,No difficulty,No,No,No
+teen58,13,Male,2,8,7,No difficulty,No,No,No
+teen59,13,Male,1,9,7,No difficulty,No,No,No
+teen60,16,Male,3,6,6,No difficulty,No,No,No
+teen61,17,Male,4,9,5,No difficulty,No,No,No
+teen62,14,Male,0,8,0,No difficulty,No,No,No
+teen63,13,Female,1,8,1,No difficulty,No,No,No
+teen64,13,Male,4,9,7,No difficulty,No,Yes,Yes
+teen65,14,Male,0,8,3,No difficulty,No,No,No
+teen66,13,Male,4,7,0,No difficulty,No,No,No
+teen67,17,Female,2,6,0,No difficulty,No,No,No
+teen68,13,Female,5,9,6,A little difficulty,Yes,Yes,Yes
+teen69,17,Male,5,7,7,No difficulty,No,No,No
+teen70,16,Male,5,8,5,No difficulty,No,No,No
+teen71,13,Male,3,8,5,No difficulty,No,No,No
+teen72,16,Female,3,8,2,No difficulty,No,No,No
+teen73,16,Female,3,9,0,No difficulty,Yes,Yes,Yes
+teen74,14,Male,3,8,7,No difficulty,No,No,No
+teen75,14,Female,8,9,1,No difficulty,No,No,No
+teen76,17,Male,7,9,2,A lot of difficulty,Yes,Yes,Yes
+teen77,16,Male,3,10,3,No difficulty,No,No,No
+teen78,17,Female,5,8,0,No difficulty,No,No,No
+teen79,14,Female,3,9,5,No difficulty,No,No,No
+teen80,14,Male,4,8,3,No difficulty,No,No,No
+teen81,13,Male,5,9,0,No difficulty,No,No,No
+teen82,16,Male,7,8,6,No difficulty,No,No,No
+teen83,14,Female,5,9,5,No difficulty,No,No,No
+teen84,15,Female,8,10,6,No difficulty,Yes,Yes,Yes
+teen85,16,Female,5,11,1,No difficulty,No,Yes,Yes
+teen86,17,Male,2,9,5,A little difficulty,Yes,Yes,Yes
+teen87,14,Female,2,8,7,No difficulty,No,No,No
+teen88,14,Male,3,9,5,No difficulty,No,No,No
+teen89,17,Female,3,8,0,No difficulty,No,Yes,Yes
+teen90,16,Female,4,7,0,No difficulty,No,No,No
+teen91,14,Female,1,7,0,No difficulty,No,No,No
+teen92,13,Female,2,10,2,No difficulty,No,No,No
+teen93,16,Male,6,6,3,No difficulty,No,Yes,Yes
+teen94,13,Female,3,8,3,No difficulty,No,No,No
+teen95,13,Female,0,9,1,No difficulty,No,No,No
+teen96,15,Male,6,7,7,A lot of difficulty,No,No,No
+teen97,13,Female,0,8,2,No difficulty,Yes,Yes,Yes
+teen98,13,Female,3,5,0,A lot of difficulty,Yes,Yes,Yes
+teen99,13,Female,1,9,4,No difficulty,No,No,No
+teen100,16,Male,5,8,5,A little difficulty,No,No,No
+teen101,17,Male,4,5,0,No difficulty,Yes,No,Yes
+teen102,15,Male,3,10,3,No difficulty,No,No,No
+teen103,13,Female,2,8,1,No difficulty,No,No,No
+teen104,16,Female,2,5,0,No difficulty,No,No,No
+teen105,17,Male,1,8,6,No difficulty,No,No,No
+teen106,13,Male,6,6,1,A little difficulty,No,No,No
+teen107,15,Male,2,8,5,A little difficulty,No,No,No
+teen108,14,Male,3,9,7,No difficulty,No,No,No
+teen109,16,Male,5,8,0,No difficulty,No,No,No
+teen110,17,Male,3,8,4,A little difficulty,Yes,Yes,Yes
+teen111,13,Male,1,8,7,No difficulty,No,No,No
+teen112,15,Male,2,7,6,No difficulty,No,No,No
+teen113,17,Female,6,8,6,A little difficulty,No,Yes,Yes
+teen114,17,Male,3,7,7,No difficulty,No,No,No
+teen115,17,Female,2,9,7,A lot of difficulty,Yes,Yes,Yes
+teen116,17,Male,2,7,4,No difficulty,No,No,No
+teen117,16,Female,5,8,7,No difficulty,No,No,No
+teen118,15,Female,4,8,1,No difficulty,No,Yes,Yes
+teen119,15,Female,3,8,1,No difficulty,No,No,No
+teen120,17,Female,2,8,7,A little difficulty,No,Yes,Yes
+teen121,17,Female,1,8,7,No difficulty,No,No,No
+teen122,14,Female,7,8,2,A little difficulty,No,Yes,Yes
+teen123,17,Female,2,8,0,No difficulty,Yes,Yes,Yes
+teen124,15,Male,2,8,0,No difficulty,No,No,No
+teen125,13,Female,3,10,3,No difficulty,No,No,No
+teen126,15,Male,2,7,0,A little difficulty,Yes,Yes,Yes
+teen127,17,Male,3,7,5,A little difficulty,No,No,No
+teen128,16,Female,4,8,0,No difficulty,No,No,No
+teen129,14,Male,3,7,4,No difficulty,No,No,No
+teen130,16,Male,4,9,6,No difficulty,No,No,No
+teen131,16,Female,2,8,5,No difficulty,No,Yes,Yes
+teen132,13,Female,2,7,3,No difficulty,No,No,No
+teen133,13,Male,2,7,4,A little difficulty,No,No,No
+teen134,13,Female,3,10,3,No difficulty,No,No,No
+teen135,15,Male,2,8,4,No difficulty,No,No,No
+teen136,15,Female,1,7,4,A little difficulty,No,No,No
+teen137,16,Male,3,8,7,A little difficulty,No,No,No
+teen138,15,Female,1,9,3,No difficulty,No,No,No
+teen139,15,Male,2,8,5,No difficulty,No,No,No
+teen140,17,Male,4,8,0,A little difficulty,Yes,Yes,Yes
+teen141,17,Male,2,8,6,No difficulty,No,No,No
+teen142,17,Male,3,9,4,No difficulty,No,No,No
+teen143,17,Female,3,7,0,No difficulty,No,No,No
+teen144,13,Male,2,8,5,No difficulty,No,No,No
+teen145,16,Female,3,7,0,A lot of difficulty,No,Yes,Yes
+teen146,17,Female,0,7,3,No difficulty,Yes,Yes,Yes
+teen147,17,Female,3,7,2,A lot of difficulty,No,Yes,Yes
+teen148,13,Female,2,8,2,No difficulty,No,No,No
+teen149,16,Male,2,8,5,No difficulty,No,No,No
+teen150,17,Male,0,7,3,No difficulty,No,No,No
+teen151,16,Male,5,9,3,No difficulty,No,No,No
+teen152,17,Female,6,7,3,A little difficulty,No,No,No
+teen153,16,Female,5,7,3,No difficulty,No,Yes,Yes
+teen154,14,Female,2,9,7,No difficulty,No,No,No
+teen155,14,Male,6,8,5,A lot of difficulty,No,No,No
+teen156,17,Female,2,8,5,A little difficulty,No,Yes,Yes
+teen157,13,Male,1,9,4,No difficulty,No,No,No
+teen158,13,Male,1,11,0,No difficulty,No,No,No
+teen159,13,Male,5,8,3,No difficulty,No,No,No
+teen160,14,Male,7,8,7,No difficulty,No,No,No
+teen161,16,Female,2,8,2,No difficulty,No,No,No
+teen162,13,Female,5,10,0,A lot of difficulty,Yes,Yes,Yes
+teen163,15,Male,2,8,3,A lot of difficulty,No,Yes,Yes
+teen164,17,Female,2,8,0,A little difficulty,No,Yes,Yes
+teen165,13,Male,5,9,3,No difficulty,No,No,No
+teen166,16,Female,3,6,1,A little difficulty,No,No,No
+teen167,13,Male,5,8,7,A little difficulty,No,Yes,Yes
+teen168,16,Female,4,7,5,A little difficulty,No,Yes,Yes
+teen169,17,Male,4,7,0,No difficulty,No,No,No
+teen170,14,Female,3,10,1,No difficulty,No,No,No
+teen171,16,Male,4,7,5,No difficulty,No,No,No
+teen172,15,Female,1,9,0,No difficulty,No,No,No
+teen173,16,Female,3,6,2,No difficulty,No,No,No
+teen174,15,Female,2,8,7,No difficulty,No,No,No
+teen175,13,Male,2,7,1,No difficulty,No,No,No
+teen176,15,Male,2,8,3,No difficulty,No,No,No
+teen177,16,Female,3,8,1,No difficulty,No,No,No
+teen178,14,Female,2,8,2,No difficulty,No,No,No
+teen179,16,Female,4,6,2,No difficulty,No,No,No
+teen180,13,Male,4,8,1,A little difficulty,No,No,No
+teen181,14,Male,1,8,7,No difficulty,No,No,No
+teen182,14,Male,3,8,1,No difficulty,No,No,No
+teen183,15,Male,2,7,2,No difficulty,No,No,No
+teen184,13,Female,3,8,0,A little difficulty,No,No,No
+teen185,17,Male,3,7,1,No difficulty,No,No,No
+teen186,13,Female,4,9,3,A little difficulty,No,No,No
+teen187,15,Female,3,5,0,No difficulty,No,Yes,Yes
+teen188,16,Female,2,7,4,No difficulty,No,No,No
+teen189,13,Female,2,9,4,No difficulty,No,No,No
+teen190,15,Male,2,8,5,No difficulty,No,No,No
+teen191,16,Female,3,9,7,No difficulty,No,No,No
+teen192,17,Female,5,6,4,No difficulty,No,Yes,Yes
+teen193,14,Female,1,8,4,No difficulty,No,No,No
+teen194,16,Male,3,7,2,No difficulty,No,No,No
+teen195,13,Female,6,8,2,No difficulty,No,Yes,Yes
+teen196,15,Female,7,9,5,No difficulty,No,No,No
+teen197,15,Male,5,9,4,A little difficulty,No,Yes,Yes
+teen198,16,Male,3,8,7,No difficulty,No,No,No
+teen199,16,Female,3,7,0,A little difficulty,No,Yes,Yes
+teen200,14,Female,2,8,3,No difficulty,Yes,Yes,Yes
