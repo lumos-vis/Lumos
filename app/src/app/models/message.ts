@@ -7,5 +7,6 @@ export class Message {
   chartType: string;
   interactionType: string;
   participantId: string;
+  participantIdSource: string;
   data: object;
 }

@@ -116,7 +116,7 @@ async def on_save_logs(sid, data):
                 print(f"Saved priors to file: {priors_filename}")
             firebase_logger.save_priors(pid, priors)
 
-def ensure_client(sid, pid, app_mode, app_type, app_level):
+def ensure_client(sid, pid, app_mode, app_type, app_level, participant_id_source="random"):
     """Get-or-create the per-participant record, applying dataset/level resets.
 
     Shared by on_interaction and on_commit_priors so both entry points
@@ -137,6 +137,7 @@ def ensure_client(sid, pid, app_mode, app_type, app_level):
         CLIENTS[pid]["app_type"] = app_type
         CLIENTS[pid]["app_level"] = app_level
         CLIENTS[pid]["connected_at"] = bias_util.get_current_time()
+        CLIENTS[pid]["participant_id_source"] = participant_id_source
         CLIENTS[pid]["bias_logs"] = []
         CLIENTS[pid]["response_list"] = []
         CLIENTS[pid]["priors"] = {}  # {attribute: PriorBelief}, last-write-wins
@@ -168,8 +169,9 @@ async def on_commit_priors(sid, data):
     app_type = data.get("appType")
     app_level = data.get("appLevel")
     pid = data["participantId"]
+    pid_source = data.get("participantIdSource", "random")
 
-    client = ensure_client(sid, pid, app_mode, app_type, app_level)
+    client = ensure_client(sid, pid, app_mode, app_type, app_level, pid_source)
 
     # Accept either a single PriorBelief or a list, keyed by attribute.
     incoming = data.get("priors", [])
@@ -189,9 +191,10 @@ async def on_interaction(sid, data):
     app_type = data["appType"]  # CONTROL / AWARENESS / ADMIN
     app_level = data["appLevel"]  # live / practice
     pid = data["participantId"]
+    pid_source = data.get("participantIdSource", "random")
     interaction_type = data["interactionType"] # Interaction type - eg. hover, click
 
-    ensure_client(sid, pid, app_mode, app_type, app_level)
+    ensure_client(sid, pid, app_mode, app_type, app_level, pid_source)
 
     # record response to interaction
     response = {}

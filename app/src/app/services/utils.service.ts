@@ -177,6 +177,7 @@ export class UtilsService {
     (message.interactionDuration = 0),
     (message.interactionAt = this.getCurrentTime()),
     (message.participantId = context.global.participantId),
+    (message.participantIdSource = context.global.participantIdSource),
     (message.data = {});
     return message;
   }

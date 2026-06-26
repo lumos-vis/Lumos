@@ -132,6 +132,7 @@ export class ElicitationModalComponent {
     this.store.setBelief(belief);
     this.chatService.sendPriors({
       participantId: this.global.participantId,
+      participantIdSource: this.global.participantIdSource,
       appMode: this.global.appMode,
       appType: this.global.appType,
       appLevel: this.global.appLevel,

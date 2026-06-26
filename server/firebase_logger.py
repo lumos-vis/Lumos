@@ -81,7 +81,7 @@ def save_meta(pid: str, client_record: dict):
     try:
         fields = {k: client_record.get(k) for k in
                   ("participant_id", "app_mode", "app_type", "app_level",
-                   "connected_at", "disconnected_at")}
+                   "connected_at", "disconnected_at", "participant_id_source")}
         _participant_ref(db, pid).set(fields, merge=True)
     except Exception as e:
         print(f"[firebase_logger] save_meta error: {e}")
