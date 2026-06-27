@@ -81,7 +81,7 @@ export var UserConfig = {
   awarenessColorScale: "Divergent",
   interpolateMode: "monotone",
   axisRescale: false,
-  jitterScatterplotPoints: false,
+  jitterScatterplotPoints: true,
   sizes: {
     awarenessPanel: {
       width: 0, // Set on ng Init.

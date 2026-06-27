@@ -358,41 +358,66 @@ function translatePoints(d, context, xIsQ, yIsQ) {
   let dataset = context.appConfig[context.global.appMode];
   if (context.userConfig.jitterScatterplotPoints) {
     // Jitter the points!
-    var jitter_factor = 50; // Increase this for more jitter.
     let rng = seedrandom(d[dataset["primaryKey"]] + context.global["participantId"]);
-    // Jitter X
-    var sign = rng() > 0.5 ? "-" : "+";
-    var jitter = rng() * jitter_factor;
+
+    // Per-axis offset bound derived from that axis's OWN geometry, computed
+    // independently so a mixed Q x N/O plot is handled correctly. The offset is
+    // applied symmetrically (base +/- [0, bound]).
+    //  - Quantitative: 0.4 x the pixel size of one data step => the point stays
+    //    strictly inside its own value's lane (the lane is +/-0.5 step wide).
+    //  - Categorical (N/O): 0.3 x bandwidth() => a tight declump that doesn't
+    //    imply a meaningful within-band position.
+    let xBase, xBound;
     if (xIsQ) {
       // x is Q
-      d["jitter_x"] = context.scatterPlotConfig.xScale(d["xVar"]) + (sign == "-" ? -jitter : jitter);
+      let xStep = dataset["attributes"][dataset["xVar"]]["step"] || 1;
+      xBase = context.scatterPlotConfig.xScale(d["xVar"]);
+      xBound =
+        0.4 *
+        Math.abs(
+          context.scatterPlotConfig.xScale(d["xVar"] + xStep) - context.scatterPlotConfig.xScale(d["xVar"])
+        );
     } else {
       // x is N/O/T
-      d["jitter_x"] = context.scatterPlotConfig.xScale(d["xVar"]) + (sign == "-" ? -jitter : jitter);
-      d["jitter_x"] += context.scatterPlotConfig.xScale.bandwidth() / 2;
+      xBase = context.scatterPlotConfig.xScale(d["xVar"]) + context.scatterPlotConfig.xScale.bandwidth() / 2;
+      xBound = 0.3 * context.scatterPlotConfig.xScale.bandwidth();
     }
-    // Jitter Y
-    var sign = rng() > 0.5 ? "-" : "+";
-    var jitter = rng() * jitter_factor;
+    let yBase, yBound;
     if (yIsQ) {
       // y is Q
-      d["jitter_y"] = context.scatterPlotConfig.yScale(d["yVar"]) + (sign == "-" ? -jitter : jitter);
+      let yStep = dataset["attributes"][dataset["yVar"]]["step"] || 1;
+      yBase = context.scatterPlotConfig.yScale(d["yVar"]);
+      yBound =
+        0.4 *
+        Math.abs(
+          context.scatterPlotConfig.yScale(d["yVar"] + yStep) - context.scatterPlotConfig.yScale(d["yVar"])
+        );
     } else {
       // y is N/O/T
-      d["jitter_y"] = context.scatterPlotConfig.yScale(d["yVar"]) + (sign == "-" ? -jitter : jitter);
-      d["jitter_y"] += context.scatterPlotConfig.yScale.bandwidth() / 2;
+      yBase = context.scatterPlotConfig.yScale(d["yVar"]) + context.scatterPlotConfig.yScale.bandwidth() / 2;
+      yBound = 0.3 * context.scatterPlotConfig.yScale.bandwidth();
     }
-    // Move the x back into the plot area
+
+    // Jitter X (same seeding pattern as before: one draw for sign, one for magnitude).
+    var sign = rng() > 0.5 ? "-" : "+";
+    var jitter = rng() * xBound;
+    d["jitter_x"] = xBase + (sign == "-" ? -jitter : jitter);
+    // Jitter Y
+    var sign = rng() > 0.5 ? "-" : "+";
+    var jitter = rng() * yBound;
+    d["jitter_y"] = yBase + (sign == "-" ? -jitter : jitter);
+
+    // Keep points in the plot area by REFLECTING overflow back inward (mirror)
+    // rather than re-randomizing, preserving an even spread at the extremes.
     if (d["jitter_x"] < 0) {
-      d["jitter_x"] = rng() * jitter_factor;
+      d["jitter_x"] = -d["jitter_x"];
     } else if (d["jitter_x"] > context.plotWidth) {
-      d["jitter_x"] = context.plotWidth - rng() * jitter_factor;
+      d["jitter_x"] = 2 * context.plotWidth - d["jitter_x"];
     }
-    // Move the y back into the plot area
     if (d["jitter_y"] < 0) {
-      d["jitter_y"] = rng() * jitter_factor;
+      d["jitter_y"] = -d["jitter_y"];
     } else if (d["jitter_y"] > context.plotHeight) {
-      d["jitter_y"] = context.plotHeight - rng() * jitter_factor;
+      d["jitter_y"] = 2 * context.plotHeight - d["jitter_y"];
     }
     // set translation string
     translate = `translate(${d["jitter_x"]},${d["jitter_y"]})`;
