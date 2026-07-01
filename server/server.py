@@ -156,33 +156,43 @@ def ensure_client(sid, pid, app_mode, app_type, app_level, participant_id_source
     return CLIENTS[pid]
 
 
-@SIO.event
+@SIO.on('on_commit_priors')
 async def on_commit_priors(sid, data):
-    """Receive elicited prior beliefs and stash them per-participant.
+    """Receive elicited prior beliefs and stash them per-participant."""
+    print(f"[on_commit_priors] received from sid={sid}")
+    try:
+        app_mode = data["appMode"]
+        app_type = data.get("appType")
+        app_level = data.get("appLevel")
+        pid = data["participantId"]
+        pid_source = data.get("participantIdSource", "random")
 
-    Emitted by the frontend each time the user saves a prior in the
-    balls-into-bins modal (incremental, one attribute at a time). Stored under
-    CLIENTS[pid]["priors"] keyed by attribute, last-write-wins, so they are
-    available to bias.compute_metrics() for the JS confirmation-bias metric.
-    """
-    app_mode = data["appMode"]
-    app_type = data.get("appType")
-    app_level = data.get("appLevel")
-    pid = data["participantId"]
-    pid_source = data.get("participantIdSource", "random")
+        client = ensure_client(sid, pid, app_mode, app_type, app_level, pid_source)
 
-    client = ensure_client(sid, pid, app_mode, app_type, app_level, pid_source)
+        incoming = data.get("priors", [])
+        if isinstance(incoming, dict):
+            incoming = [incoming]
+        for belief in incoming:
+            condition = belief.get("condition", "default")
+            key = f"{belief['attribute']}::{condition}"
+            print(f"[on_commit_priors] attribute={belief.get('attribute')} condition={condition} key={key}")
+            client["priors"][key] = belief
 
-    # Accept either a single PriorBelief or a list, keyed by attribute.
-    incoming = data.get("priors", [])
-    if isinstance(incoming, dict):
-        incoming = [incoming]
-    for belief in incoming:
-        client["priors"][belief["attribute"]] = belief
+        print(f"[on_commit_priors] priors keys now: {sorted(client['priors'].keys())}")
+        firebase_logger.save_priors(pid, client["priors"])
+        firebase_logger.save_meta(pid, client)
+    except Exception as e:
+        print(f"[on_commit_priors] ERROR: {e}", flush=True)
+        raise
 
-    print(f"Committed priors for {pid} ({app_mode}): {sorted(client['priors'].keys())}")
-    firebase_logger.save_priors(pid, client["priors"])
-    firebase_logger.save_meta(pid, client)
+
+@SIO.on('on_selected_subjects')
+async def on_selected_subjects(sid, data):
+    pid = data.get("participantId")
+    subjects = data.get("selected_subjects", [])
+    if pid:
+        firebase_logger.save_selected_subjects(pid, subjects)
+        print(f"Selected subjects for {pid}: {subjects}")
 
 
 @SIO.event

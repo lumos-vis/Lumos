@@ -104,8 +104,20 @@ def save_logs(pid: str, response_list: list):
         print(f"[firebase_logger] save_logs error: {e}")
 
 
+def save_selected_subjects(pid: str, subjects: list):
+    """Upsert the participant's selected subjects list."""
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        _participant_ref(db, pid).set({"selected_subjects": _sanitize(subjects)}, merge=True)
+        print(f"[firebase_logger] Saved {len(subjects)} selected subjects for {pid}.")
+    except Exception as e:
+        print(f"[firebase_logger] save_selected_subjects error: {e}")
+
+
 def save_priors(pid: str, priors: dict):
-    """Write each prior belief as a Firestore document keyed by attribute name."""
+    """Write each prior belief as its own Firestore document."""
     db = _get_db()
     if db is None:
         return
@@ -113,11 +125,10 @@ def save_priors(pid: str, priors: dict):
         return
     try:
         priors_ref = _participant_ref(db, pid).collection("priors")
-        batch = db.batch()
-        for attribute, belief in priors.items():
-            doc = priors_ref.document(attribute)
-            batch.set(doc, _sanitize(belief))
-        batch.commit()
-        print(f"[firebase_logger] Saved {len(priors)} priors for {pid}.")
+        for key, belief in priors.items():
+            doc_id = key.replace("/", "_").replace(":", "_")
+            print(f"[firebase_logger] Writing prior '{doc_id}' for {pid}")
+            priors_ref.document(doc_id).set(_sanitize(belief))
+        print(f"[firebase_logger] Saved {len(priors)} prior(s) for {pid}.")
     except Exception as e:
         print(f"[firebase_logger] save_priors error: {e}")

@@ -37,7 +37,12 @@ export class ChatService {
   }
 
   sendPriors(payload) {
+    console.log('[socket] sendPriors emitting, connected=', (this.vizSocket as any).ioSocket?.connected, payload);
     this.vizSocket.emit("on_commit_priors", payload);
+  }
+
+  sendSelectedSubjects(payload) {
+    this.vizSocket.emit("on_selected_subjects", payload);
   }
 
   getDisconnectEventResponse() {

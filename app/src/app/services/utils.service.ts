@@ -131,7 +131,7 @@ export class UtilsService {
    */
   colorDataPoint(context, dataPoint, dataList) {
     let dataset = context.appConfig[context.global.appMode];
-    if (context.global.appType == "CONTROL" || dataPoint["timesVisited"] == 0) {
+    if (dataPoint["timesVisited"] == 0) {
       // no bias coloring!!
       dataPoint["ratioTimesVisited"] = 0;
       dataPoint["color"] = "white";
@@ -170,7 +170,7 @@ export class UtilsService {
     let chartType = context.appConfig[context.global.appMode]["chartType"];
     let message = new Message();
     (message.appMode = context.global.appMode),
-    (message.appType = context.global.appType),
+    (message.appType = context.global.appLayout || context.global.appType),
     (message.appLevel = context.global.appLevel),
     (message.chartType = chartType),
     (message.interactionType = ""),

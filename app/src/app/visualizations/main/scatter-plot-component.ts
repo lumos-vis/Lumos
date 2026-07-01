@@ -78,7 +78,7 @@ export class ScatterPlot {
 
     // Add legend group, text and gradient rectangle
     context.scatterPlotConfig.legendGroup = context.plotGroup.append("g").classed("legend", true);
-    if (context.global.appType !== "CONTROL") {
+    if (context.global.appLayout !== 'CONTROL') {
       const pad = 5; // padding (px) between elements
       const gradRectWidth = context.plotWidth / 5; // width of gradient rectangle
       const leftLabel = "Less Focus"; // label on the left of the legend gradient
@@ -325,6 +325,7 @@ export class ScatterPlot {
       .attr("transform", (d) => translatePoints(d, context, xIsQ, yIsQ))
       .attr("r", 6)
       .style("fill", (d) => {
+        if (context.global.appLayout === 'CONTROL') return "white";
         // use dict OBJECT to update source data by reference!
         let dataPoint = originalDatasetDict[d[dataset["primaryKey"]]];
         context.utilsService.colorDataPoint(context, dataPoint, prepared);
@@ -335,16 +336,33 @@ export class ScatterPlot {
       .style("stroke", (d) => (d["selected"] ? "brown" : "black"))
       .style("cursor", "pointer")
       .on("click", function (event, d) {
-        if (context.global.appType === "ADMIN") {
+        const isControl = context.global.appLayout === "CONTROL";
+        const isAdmin = context.global.appType === "ADMIN";
+        if (isControl) {
+          const selectedCount = Object.keys(dataset["selectedObjects"]).length;
+          if (d["selected"]) {
+            context.utilsService.clickRemoveItem(context, event, d);
+          } else if (selectedCount < 10) {
+            context.utilsService.clickAddItem(context, event, d);
+          }
+        } else if (isAdmin) {
           d["selected"]
             ? context.utilsService.clickRemoveItem(context, event, d)
             : context.utilsService.clickAddItem(context, event, d);
         }
       })
       .on("mouseover", function (event, d) {
-        context.utilsService.mouseoverItem(context, event, d, this, "fill");
+        if (context.global.appLayout === 'CONTROL') {
+          d3.select(this).style("fill", "#AED6F1");
+          context.utilsService.mouseoverItem(context, event, d);
+        } else {
+          context.utilsService.mouseoverItem(context, event, d, this, "fill");
+        }
       })
       .on("mouseout", function (event, d) {
+        if (context.global.appLayout === 'CONTROL') {
+          d3.select(this).style("fill", "white");
+        }
         context.utilsService.mouseoutItem(context, event, d);
       });
   }

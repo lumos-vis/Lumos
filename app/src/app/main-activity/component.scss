@@ -351,9 +351,171 @@
   }
 }
 
+/** Selected Subjects Panel */
+.selected-subjects-header {
+  margin-bottom: 10px;
+}
+
+.subject-hint {
+  font-size: 0.78rem;
+  color: #999;
+  margin-bottom: 8px;
+}
+
+.subject-complete-banner {
+  font-size: 0.8rem;
+  color: #27ae60;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  background: #eafaf1;
+  border-radius: 4px;
+  border: 1px solid #a9dfbf;
+}
+
+.subject-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.subject-row {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  gap: 8px;
+  cursor: default;
+  transition: background 0.1s;
+
+  &:hover {
+    background: #e8f4fd;
+    outline: 1.5px solid #3498db;
+
+    .subject-remove {
+      opacity: 1;
+    }
+
+    .subject-name {
+      color: #1a6fa8;
+    }
+  }
+}
+
+.subject-index {
+  font-size: 0.78rem;
+  color: #aaa;
+  min-width: 18px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.subject-name {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #222;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subject-legend {
+  display: flex;
+  align-items: center;
+  font-size: 0.75rem;
+  color: #888;
+  margin-bottom: 8px;
+}
+
+.subject-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.subject-remove {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  font-size: 0.7rem;
+  color: #bbb;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+  flex-shrink: 0;
+
+  &:hover {
+    color: #e74c3c;
+  }
+}
+
+.subject-empty {
+  font-size: 0.82rem;
+  color: #bbb;
+  text-align: center;
+  padding-top: 24px;
+}
+
 .separator {
   margin-top: 8px;
   margin-bottom: 4px;
+}
+
+.control-filter-panel {
+  .form-group {
+    margin-bottom: 0;
+  }
+
+  .form-label {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 8px 10px;
+    margin: 0;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: #1a1a1a;
+    background: #f8f8f8;
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s;
+
+    &:hover {
+      background: #f0f0f0;
+    }
+
+    i {
+      margin-right: 6px;
+      color: #888;
+      font-size: 0.7rem;
+    }
+  }
+
+  .q-filter-slider,
+  ng-multiselect-dropdown {
+    display: block;
+    background: white;
+    border: 1px solid #e8e8e8;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    margin-bottom: 6px;
+    margin-top: 0;
+    padding: 0;
+
+    .multiselect-dropdown {
+      margin: 0;
+      padding: 4px 8px;
+    }
+  }
+
+  hr.separator {
+    display: none;
+  }
 }
 
 #collapseAttributeControls,

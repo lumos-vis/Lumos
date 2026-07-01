@@ -9,10 +9,10 @@
 <div>
   <as-split direction="horizontal" class="border-light h-full" restrictMove="true">
     <!-- COLUMN: Data and Attributes -->
-    <as-split-area [size]="20">
+    <as-split-area [size]="20" *ngIf="global.appLayout !== 'CONTROL'">
       <as-split direction="vertical" restrictMove="true">
         <!-- ROW: Dataset Selector -->
-        <as-split-area [size]="15">
+        <as-split-area [size]="15" *ngIf="global.appLayout !== 'CONTROL'">
           <div class="list-group h-100" style="overflow: auto">
             <article class="list-group-item">
               <!-- Header -->
@@ -50,7 +50,7 @@
         </as-split-area>
 
         <!-- ROW: Attribute Panel -->
-        <as-split-area [size]="85">
+        <as-split-area [size]="85" *ngIf="global.appLayout !== 'CONTROL'">
           <div class="list-group h-100" style="overflow: auto">
             <article class="list-group-item">
               <!-- Header -->
@@ -80,7 +80,7 @@
                       <tr>
                         <td style="float: right">Sort by</td>
                         <td>
-                          <ng-container *ngIf="global.appType == 'CONTROL'">
+                          <ng-container *ngIf="global.appLayout == 'CONTROL'">
                             <ng-select name="attributeSortByModeSelect" appendTo="body" [clearable]="false"
                               [searchable]="false"
                               [ngStyle]="{ width: getSelectWidth('attributeControlSortByModes', 'sortByModeMapping') }"
@@ -91,7 +91,7 @@
                               </ng-option>
                             </ng-select>
                           </ng-container>
-                          <ng-container *ngIf="global.appType !== 'CONTROL'">
+                          <ng-container *ngIf="global.appLayout !== 'CONTROL'">
                             <ng-select name="attributeSortByModeSelect" appendTo="body" [clearable]="false"
                               [searchable]="false"
                               [ngStyle]="{ width: getSelectWidth('attributeSortByModes', 'sortByModeMapping') }"
@@ -106,7 +106,7 @@
                       </tr>
 
                       <!-- Color Scale -->
-                      <tr *ngIf="global.appType != 'CONTROL'">
+                      <tr *ngIf="global.appLayout != 'CONTROL'">
                         <td style="float: right">Color Scale</td>
                         <td>
                           <ng-select name="attributeColorScaleSelect" appendTo="body" [clearable]="false"
@@ -121,7 +121,7 @@
                       </tr>
 
                       <!-- Color By -->
-                      <tr *ngIf="global.appType != 'CONTROL'">
+                      <tr *ngIf="global.appLayout != 'CONTROL'">
                         <td style="float: right">Color By</td>
                         <td>
                           <ng-select name="attributeColorByModeSelect" appendTo="body" [clearable]="false"
@@ -140,7 +140,7 @@
               </div>
 
               <!-- Content: Color Legend -->
-              <div *ngIf="global.appType !== 'CONTROL' && userConfig['attributeColorScale'] == 'Sequential'">
+              <div *ngIf="global.appLayout !== 'CONTROL' && userConfig['attributeColorScale'] == 'Sequential'">
                 <div class="text-center"><span class="title">Your Focus</span></div>
                 <table class="w-100 m-b-md">
                   <tr>
@@ -156,7 +156,7 @@
                   </tr>
                 </table>
               </div>
-              <div *ngIf="global.appType !== 'CONTROL' && userConfig['attributeColorScale'] == 'Divergent'">
+              <div *ngIf="global.appLayout !== 'CONTROL' && userConfig['attributeColorScale'] == 'Divergent'">
                 <div class="text-center"><span class="title">Your Focus</span></div>
                 <table class="w-100 m-b-md">
                   <tr>
@@ -220,10 +220,10 @@
     </as-split-area>
 
     <!-- COLUMN: Filters, Encodings, and Configurations -->
-    <as-split-area [size]="20">
+    <as-split-area [size]="global.appLayout === 'CONTROL' ? 20 : 20">
       <as-split direction="vertical" class="border-light" restrictMove="true">
         <!-- ROW: Encodings -->
-        <as-split-area [size]="34">
+        <as-split-area [size]="global.appLayout === 'CONTROL' ? 30 : 34">
           <div class="list-group h-100" style="overflow-x: hidden">
             <article class="list-group-item">
               <!-- Header -->
@@ -249,8 +249,8 @@
               <!-- Content -->
               <div>
                 <form>
-                  <!-- OPTION: Chart Type -->
-                  <div class="row mb-sm">
+                  <!-- OPTION: Chart Type (hidden in CONTROL mode — locked to scatterplot) -->
+                  <div *ngIf="global.appLayout !== 'CONTROL'" class="row mb-sm">
                     <label class="col-sm-4 col-form-label">Chart</label>
                     <div class="col-sm-8">
                       <ng-select name="chartSelect" [searchable]="false" appendTo="body"
@@ -367,7 +367,7 @@
                   </div>
 
                   <!-- OPTION: Color By -->
-                  <div *ngIf="global.appType != 'CONTROL'" class="row mb-sm">
+                  <div *ngIf="global.appLayout != 'CONTROL'" class="row mb-sm">
                     <label class="col-sm-4 col-form-label">Color By</label>
                     <div class="col-sm-8">
                       <ng-select name="visColorByModeSelect" [searchable]="false" [clearable]="false" appendTo="body"
@@ -386,7 +386,7 @@
         </as-split-area>
 
         <!-- ROW: Filters -->
-        <as-split-area [size]="global.appType == 'ADMIN' ? 33 : 66">
+        <as-split-area [size]="global.appType == 'ADMIN' ? 33 : global.appLayout === 'CONTROL' ? 70 : 66">
           <div class="list-group h-100">
             <article class="list-group-item">
               <!-- Header -->
@@ -398,7 +398,7 @@
                         <span class="badge badge-secondary">Filters</span>
                       </h5>
                     </td>
-                    <td class="float-right">
+                    <td class="float-right" *ngIf="global.appLayout !== 'CONTROL'">
                       <button class="btn btn-light btn-sm" (click)="removeFilters()">
                         <i class="fa fa-times"></i>
                       </button>
@@ -408,28 +408,32 @@
               </header>
 
               <!-- Content -->
-              <div>
+              <div [class.control-filter-panel]="global.appLayout === 'CONTROL'">
                 <form>
                   <!-- OPTION: Nominal Attributes -->
                   <div class="form-group"
                     *ngFor="let attribute of appConfig[global.appMode].attributeDatatypeList['N'];">
                     <ng-container *ngIf="appConfig[global.appMode]['attributes'][attribute]['filter']">
-                      <span>
-                        <label class="form-label" for="{{'select_' + attribute}}">{{attribute}}</label>
-                        <button class="btn btn-light btn-sm float-right" (click)="removeFilter(attribute)">
+                      <div style="display:block; margin-bottom: 6px;">
+                        <label class="form-label" for="{{'select_' + attribute}}" style="cursor:pointer; margin-bottom:0" (click)="global.appLayout === 'CONTROL' ? toggleFilterExpand(attribute) : null">
+                          <i *ngIf="global.appLayout === 'CONTROL'" class="fa" [ngClass]="expandedFilters.has(attribute) ? 'fa-chevron-down' : 'fa-chevron-right'" style="font-size:0.7rem; margin-right:4px"></i>
+                          {{attribute}}
+                        </label>
+                        <button *ngIf="global.appLayout !== 'CONTROL'" class="btn btn-light btn-sm float-right" (click)="removeFilter(attribute)">
                           <i class="fa fa-times"></i>
                         </button>
-                      </span>
-                      <ng-multiselect-dropdown name="{{'select_' + attribute}}" [placeholder]="' '" appendTo="body"
-                        [data]="appConfig[global.appMode]['attributes'][attribute]['types']"
-                        [(ngModel)]="appConfig[global.appMode]['attributes'][attribute]['filterModel']"
-                        [settings]="userConfig['filterMultiselectDropdownSettings']"
-                        (onSelect)="onChangeFilter(attribute, 'select')"
-                        (onSelectAll)="onChangeFilter(attribute, 'selectAll')"
-                        (onDeSelect)="onChangeFilter(attribute, 'deselect')"
-                        (onDeSelectAll)="onChangeFilter(attribute, 'deselectAll')">
-                      </ng-multiselect-dropdown>
-                      <hr class="separator" />
+                        <ng-container *ngIf="global.appLayout !== 'CONTROL' || expandedFilters.has(attribute)">
+                          <ng-multiselect-dropdown name="{{'select_' + attribute}}" [placeholder]="' '" appendTo="body"
+                            [data]="appConfig[global.appMode]['attributes'][attribute]['types']"
+                            [(ngModel)]="appConfig[global.appMode]['attributes'][attribute]['filterModel']"
+                            [settings]="userConfig['filterMultiselectDropdownSettings']"
+                            (onSelect)="onChangeFilter(attribute, 'select')"
+                            (onSelectAll)="onChangeFilter(attribute, 'selectAll')"
+                            (onDeSelect)="onChangeFilter(attribute, 'deselect')"
+                            (onDeSelectAll)="onChangeFilter(attribute, 'deselectAll')">
+                          </ng-multiselect-dropdown>
+                        </ng-container>
+                      </div>
                     </ng-container>
                   </div>
 
@@ -438,19 +442,24 @@
                     *ngFor="let attribute of appConfig[global.appMode].attributeDatatypeList['Q'];">
                     <ng-container *ngIf="appConfig[global.appMode]['attributes'][attribute]['filter']">
                       <span>
-                        <label class="form-label" for="{{'slider_' + attribute}}">{{attribute}}</label>
-                        <button class="btn btn-light btn-sm float-right" (click)="removeFilter(attribute)">
+                        <label class="form-label" for="{{'slider_' + attribute}}" style="cursor:pointer" (click)="global.appLayout === 'CONTROL' ? toggleFilterExpand(attribute) : null">
+                          <i *ngIf="global.appLayout === 'CONTROL'" class="fa" [ngClass]="expandedFilters.has(attribute) ? 'fa-chevron-down' : 'fa-chevron-right'" style="font-size:0.7rem; margin-right:4px"></i>
+                          {{attribute}}
+                        </label>
+                        <button *ngIf="global.appLayout !== 'CONTROL'" class="btn btn-light btn-sm float-right" (click)="removeFilter(attribute)">
                           <i class="fa fa-times"></i>
                         </button>
                       </span>
-                      <div class="q-filter-slider">
-                        <nouislider name="{{'slider_' + attribute}}" [config]="qFilterSliderConfig(attribute)"
-                          [behaviour]="drag" [connect]="true"
-                          [(ngModel)]="appConfig[global.appMode]['attributes'][attribute]['filterModel']"
-                          (change)="onChangeFilter(attribute, 'sliderChange')">
-                        </nouislider>
-                        <hr class="separator" />
-                      </div>
+                      <ng-container *ngIf="global.appLayout !== 'CONTROL' || expandedFilters.has(attribute)">
+                        <div class="q-filter-slider">
+                          <nouislider name="{{'slider_' + attribute}}" [config]="qFilterSliderConfig(attribute)"
+                            [behaviour]="drag" [connect]="true"
+                            [(ngModel)]="appConfig[global.appMode]['attributes'][attribute]['filterModel']"
+                            (change)="onChangeFilter(attribute, 'sliderChange')">
+                          </nouislider>
+                        </div>
+                      </ng-container>
+                      <hr class="separator" />
                     </ng-container>
                   </div>
 
@@ -460,7 +469,7 @@
                     <ng-container *ngIf="appConfig[global.appMode]['attributes'][attribute]['filter']">
                       <span>
                         <label class="form-label" for="{{'slider_' + attribute}}">{{attribute}}</label>
-                        <button class="btn btn-light btn-sm float-right" (click)="removeFilter(attribute)">
+                        <button *ngIf="global.appLayout !== 'CONTROL'" class="btn btn-light btn-sm float-right" (click)="removeFilter(attribute)">
                           <i class="fa fa-times"></i>
                         </button>
                       </span>
@@ -487,7 +496,7 @@
     </as-split-area>
 
     <!-- COLUMN: Main VIS -->
-    <as-split-area [size]="global.appType !== 'CONTROL' ? 40 : 60" class="w-100">
+    <as-split-area [size]="global.appLayout !== 'CONTROL' ? 40 : 60" class="w-100">
       <as-split direction="vertical" restrictMove="true" class="w-100">
         <!-- ROW: Plot Container -->
         <as-split-area [size]="68" style="position: relative">
@@ -622,10 +631,10 @@
     </as-split-area>
 
     <!-- COLUMN: Awareness Panel -->
-    <as-split-area *ngIf="global.appType !== 'CONTROL'" [size]="global.appType !== 'CONTROL' ? 20 : 0">
+    <as-split-area [size]="20">
       <as-split direction="vertical" class="border-light" restrictMove="true">
-        <!-- ROW: Awareness Panel -->
-        <as-split-area [size]="100">
+        <!-- ROW: Awareness Panel (hidden in CONTROL mode) -->
+        <as-split-area *ngIf="global.appLayout !== 'CONTROL'" [size]="100">
           <div class="list-group h-100">
             <article class="list-group-item">
               <!-- Header -->
@@ -667,7 +676,7 @@
                       </tr>
 
                       <!-- Sort By Mode -->
-                      <tr *ngIf="global.appType !== 'CONTROL'">
+                      <tr>
                         <td style="float: right">Sort by</td>
                         <td>
                           <ng-select name="awarenessSortByModeSelect" appendTo="body" [clearable]="false"
@@ -683,7 +692,7 @@
                       </tr>
 
                       <!-- Awareness Mode -->
-                      <tr *ngIf="global.appType != 'CONTROL'">
+                      <tr>
                         <td style="float: right">Mode</td>
                         <td>
                           <ng-select name="awarenessModeSelect" appendTo="body" [clearable]="false" [searchable]="false"
@@ -695,7 +704,7 @@
                       </tr>
 
                       <!-- Color Scale -->
-                      <tr *ngIf="global.appType != 'CONTROL'">
+                      <tr>
                         <td style="float: right">Color Scale</td>
                         <td>
                           <ng-select name="awarenessColorScaleSelect" appendTo="body" [clearable]="false"
@@ -710,7 +719,7 @@
                       </tr>
 
                       <!-- Interpolate Mode -->
-                      <tr *ngIf="global.appType != 'CONTROL'">
+                      <tr>
                         <td style="float: right">Interpolation</td>
                         <td>
                           <ng-select name="interpolateModeSelect" appendTo="body" [clearable]="false"
@@ -729,7 +738,7 @@
               </div>
 
               <!-- Content: Color Legend -->
-              <div *ngIf="global.appType !== 'CONTROL' && userConfig['awarenessColorScale'] == 'Sequential'">
+              <div *ngIf="userConfig['awarenessColorScale'] == 'Sequential'">
                 <br />
                 <div class="text-center"><span class="title">Data Distribution vs. Your Focus</span></div>
                 <table class="w-100 m-b-md">
@@ -746,7 +755,7 @@
                   </tr>
                 </table>
               </div>
-              <div *ngIf="global.appType !== 'CONTROL' && userConfig['awarenessColorScale'] == 'Divergent'">
+              <div *ngIf="userConfig['awarenessColorScale'] == 'Divergent'">
                 <br />
                 <div class="text-center"><span class="title">Data Distribution vs. Your Focus</span></div>
                 <table class="w-100 m-b-md">
@@ -890,6 +899,68 @@
             </article>
           </div>
         </as-split-area>
+
+        <!-- ROW: Selected Subjects Panel (CONTROL only) -->
+        <as-split-area *ngIf="global.appLayout === 'CONTROL'" [size]="100">
+          <div class="list-group h-100" style="overflow: auto">
+            <article class="list-group-item">
+
+              <!-- Header -->
+              <header class="selected-subjects-header">
+                <h5 class="display-inline">
+                  <span class="badge badge-secondary">
+                    Selected Teens ({{objectKeys(appConfig[global.appMode]['selectedObjects']).length}} / 10)
+                  </span>
+                </h5>
+              </header>
+
+              <!-- Completion banner -->
+              <div *ngIf="objectKeys(appConfig[global.appMode]['selectedObjects']).length === 10"
+                   class="subject-complete-banner">
+                <i class="fa fa-check-circle"></i> Selection complete!
+              </div>
+
+              <!-- Hint when incomplete -->
+              <div *ngIf="objectKeys(appConfig[global.appMode]['selectedObjects']).length < 10"
+                   class="subject-hint">
+                Click on a data point to add a teen.
+              </div>
+
+              <!-- Legend -->
+              <div class="subject-legend">
+                <span class="subject-dot" style="background-color: #e74c3c;"></span> Dep/Anx diagnosis
+                &nbsp;&nbsp;
+                <span class="subject-dot" style="background-color: #d0d0d0;"></span> No diagnosis
+              </div>
+
+              <!-- Subject list -->
+              <div class="subject-list">
+                <div *ngFor="let subject of objectValues(appConfig[global.appMode]['selectedObjects']); let i = index"
+                     class="subject-row"
+                     (mouseenter)="hoverSubject(subject)"
+                     (mouseleave)="unhoverSubject()">
+                  <span class="subject-index">{{i + 1}}.</span>
+                  <span class="subject-dot"
+                        [style.background-color]="subject['ever_diagnosed_dep_or_anx'] === 'Yes' ? '#e74c3c' : '#d0d0d0'"
+                        title="Dep/Anx diagnosis: {{subject['ever_diagnosed_dep_or_anx']}}">
+                  </span>
+                  <span class="subject-name">{{subject[appConfig[global.appMode].primaryKey]}}</span>
+                  <button class="subject-remove" (click)="removeSubject(subject[appConfig[global.appMode].primaryKey])">
+                    <i class="fa fa-times"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Empty state -->
+              <div *ngIf="objectKeys(appConfig[global.appMode]['selectedObjects']).length === 0"
+                   class="subject-empty">
+                No teens selected yet.
+              </div>
+
+            </article>
+          </div>
+        </as-split-area>
+
       </as-split>
     </as-split-area>
   </as-split>

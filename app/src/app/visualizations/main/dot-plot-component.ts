@@ -77,7 +77,7 @@ export class DotPlot {
 
     // Add legend group, text and gradient rectangle
     context.dotPlotConfig.legendGroup = context.plotGroup.append("g").classed("legend", true);
-    if (context.global.appType !== "CONTROL") {
+    if (true) {
       let xPos = context.plotWidth; // x position of element, gets updated dynamically
       const pad = 5; // padding between elements
       const gradRectWidth = context.plotWidth / 5; // width of gradient rectangle
@@ -309,7 +309,7 @@ export class DotPlot {
       })
       .style("fill", (d) => {
         // fill based on interactions with underlying data points!
-        if (context.global.appType == "CONTROL") return "white";
+        
         switch (dataset["colorByMode"]) {
           case "abs":
             const sumInteracted = d[1].reduce(context.utilsService.sumTimesVisited, 0) as number;

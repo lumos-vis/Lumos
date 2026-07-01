@@ -4,25 +4,46 @@
     <!-- header -->
     <div class="modal-header">
       <div class="modal-header-left">
+
+        <!-- attribute picker -->
         <div *ngIf="!selectedAttribute">
           <div class="modal-title">Prior Beliefs · <span class="modal-title-attr">{{ datasetId }}</span></div>
           <div class="modal-subtitle">Pick an attribute to distribute your beliefs.</div>
         </div>
+
+        <!-- distribution step -->
         <div *ngIf="selectedAttribute && !confidenceStep">
           <div class="modal-title">
-            Distribute your beliefs for <span class="modal-title-attr">{{ selectedAttribute }}</span>
+            <span class="condition-step-badge">{{ conditionStep }} / 2</span>
+            {{ cleanAttr(selectedAttribute) }}
           </div>
-          <div class="modal-subtitle">Place all {{ binningService.ballCount }} balls into the bins below.</div>
+          <div class="modal-instruction">
+            Think only about the <span class="condition-highlight">{{ conditionLabel }}</span>.
+            Below are ranges of <strong>{{ cleanAttr(selectedAttribute) }}</strong>.
+            You have <strong>{{ binningService.ballCount }} tokens</strong> — place them across the ranges to show
+            how common you think each range is among these teens.
+            More tokens mean more common. You must place all {{ binningService.ballCount }}.
+          </div>
         </div>
+
+        <!-- confidence step -->
         <div *ngIf="selectedAttribute && confidenceStep">
-          <div class="modal-title">How confident are you?</div>
-          <div class="modal-subtitle">Rate your confidence in your prior for <span class="modal-title-attr">{{ selectedAttribute }}</span>.</div>
+          <div class="modal-title">
+            <span class="condition-step-badge">{{ conditionStep }} / 2</span>
+            How confident are you?
+          </div>
+          <div class="modal-instruction">
+            Rate your confidence in this distribution for
+            <strong>{{ cleanAttr(selectedAttribute) }}</strong> among the
+            <span class="condition-highlight">{{ conditionLabel }}</span>.
+          </div>
         </div>
+
       </div>
 
       <div *ngIf="selectedAttribute && !confidenceStep" class="modal-balls-counter" [class.complete]="remaining === 0">
         <span class="modal-balls-count" [ngClass]="counterClass">{{ remaining }}</span>
-        <span class="modal-balls-label">balls left</span>
+        <span class="modal-balls-label">tokens left</span>
       </div>
 
       <button class="modal-close" (click)="close()" [disabled]="!canClose" [title]="canClose ? '' : 'Set at least one prior belief before closing'">✕</button>
@@ -30,7 +51,7 @@
 
     <div class="modal-body">
 
-      <!-- attribute picker -->
+      <!-- attribute picker list -->
       <div *ngIf="!selectedAttribute">
         <div *ngIf="attributes.length > 0">
           <div class="attr-group-label">Quantitative</div>
@@ -41,7 +62,9 @@
               class="attribute-item"
               [class.done]="hasPrior(attr)"
             >
-              <span *ngIf="hasPrior(attr)">✓ </span>{{ attr }}
+              <span *ngIf="hasPrior(attr)">✓ </span>
+              <span *ngIf="!hasPrior(attr) && hasConditionPrior(attr, 'diagnosed')" class="partial-check">½ </span>
+              {{ cleanAttr(attr) }}
             </li>
           </ul>
         </div>
@@ -54,7 +77,9 @@
               class="attribute-item"
               [class.done]="hasPrior(entry.key)"
             >
-              <span *ngIf="hasPrior(entry.key)">✓ </span>{{ entry.key }}
+              <span *ngIf="hasPrior(entry.key)">✓ </span>
+              <span *ngIf="!hasPrior(entry.key) && hasConditionPrior(entry.key, 'diagnosed')" class="partial-check">½ </span>
+              {{ cleanAttr(entry.key) }}
             </li>
           </ul>
         </div>
@@ -75,29 +100,32 @@
 
       <!-- confidence step -->
       <div *ngIf="selectedAttribute && confidenceStep" class="confidence-step">
-        <div class="confidence-scale">
-          <div class="confidence-col" *ngFor="let opt of confidenceOptions">
-            <span class="confidence-col-header">{{ opt.label }}</span>
-          </div>
+        <div class="confidence-scale-labels">
+          <span>Not confident</span>
+          <span>Extremely confident</span>
         </div>
-        <div class="confidence-scale confidence-row">
-          <div class="confidence-col" *ngFor="let opt of confidenceOptions" (click)="confidenceRating = opt.value">
-            <div class="confidence-circle" [class.selected]="confidenceRating === opt.value"></div>
-          </div>
-        </div>
+        <input
+          type="range"
+          min="1"
+          max="100"
+          class="confidence-slider"
+          [(ngModel)]="confidenceRating"
+        />
+        <div class="confidence-value">{{ confidenceRating !== null ? confidenceRating : '–' }} / 100</div>
       </div>
 
     </div>
 
     <!-- footer -->
     <div class="modal-footer">
-      <button *ngIf="selectedAttribute && !confidenceStep" (click)="selectedAttribute = null">Back</button>
-      <button *ngIf="selectedAttribute && confidenceStep" (click)="confidenceStep = false">Back</button>
+      <button *ngIf="selectedAttribute" (click)="goBack()">Back</button>
       <button *ngIf="!selectedAttribute" (click)="close()" [disabled]="!canClose">
-        {{ canClose ? 'Close' : 'Set at least one prior to continue' }}
+        {{ canClose ? 'Close' : 'Set a prior for all attributes to continue' }}
       </button>
       <button *ngIf="selectedAttribute && !confidenceStep" class="primary" (click)="save()" [disabled]="remaining > 0">Save & continue</button>
-      <button *ngIf="selectedAttribute && confidenceStep" class="primary" (click)="submitConfidence()" [disabled]="confidenceRating === null">Confirm</button>
+      <button *ngIf="selectedAttribute && confidenceStep" class="primary" (click)="submitConfidence()" [disabled]="confidenceRating === null">
+        {{ currentCondition === 'diagnosed' ? 'Next: No diagnosis →' : 'Confirm' }}
+      </button>
     </div>
 
   </div>

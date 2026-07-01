@@ -23,7 +23,7 @@ export class BallsIntoBinsComponent implements OnInit, OnChanges {
     } else if (this.values.length > 0) {
       this.bins = this.binningService.computeBins(this.values);
     }
-    const emptyLen = this.bins.length || this.binningService.binCount;
+    const emptyLen = this.bins.length || 10;
     this.counts = this.initialCounts.length > 0
       ? this.initialCounts.slice()
       : this.binningService.emptyCountsFor(emptyLen);

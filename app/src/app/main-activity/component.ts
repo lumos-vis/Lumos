@@ -53,6 +53,8 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
   plotHeight: number;
   plotGroup: any;
   showPriorModal = false;
+  expandedFilters: Set<string> = new Set();
+  toggleFilterExpand(attr: string) { this.expandedFilters.has(attr) ? this.expandedFilters.delete(attr) : this.expandedFilters.add(attr); }
   private _lastLoggedChartType: string | null = undefined;
 
   constructor(
@@ -81,9 +83,13 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
       if("level" in params){
         this.global.appLevel = params["level"];
       }
+      const typeAliases: Record<string, string> = { F: "CONTROL" };
+      const rawType = params["type"];
+      const resolvedType = typeAliases[rawType] ?? rawType;
       const validTypes = ["CONTROL", "AWARENESS", "ADMIN"];
-      if ("type" in params && validTypes.includes(params["type"])) {
-        this.global.appType = params["type"];
+      if (rawType && validTypes.includes(resolvedType)) {
+        this.global.appLayout = resolvedType;
+        this.global.appType = resolvedType;
       }
     });
     this.qFilterSliderConfig = (attribute) => {
@@ -106,6 +112,37 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
     this.plotGroup = null;
   }
 
+  /** ========================= SUBJECT SELECTION METHODS ====================== */
+
+  hoverSubject(subject: any) {
+    this.appConfig[this.global.appMode]['hoveredObject'] = subject;
+  }
+
+  unhoverSubject() {
+    this.appConfig[this.global.appMode]['hoveredObject'] = { hovered: false };
+  }
+
+  removeSubject(id: string) {
+    let d = this.userConfig['originalDatasetDict'][id];
+    if (d) {
+      this.utilsService.clickRemoveItem(this, { clientX: 0, clientY: 0 }, d);
+      this.saveSelectedSubjects();
+      this.updateVis();
+    }
+  }
+
+  saveSelectedSubjects() {
+    const ids = Object.keys(this.appConfig[this.global.appMode]['selectedObjects']);
+    this.chatService.sendSelectedSubjects({
+      participantId: this.global['participantId'],
+      participantIdSource: this.global['participantIdSource'],
+      appMode: this.global.appMode,
+      appType: this.global.appType,
+      appLevel: this.global.appLevel,
+      selected_subjects: ids,
+    });
+  }
+
   /** ====================== PRIOR ELICITATION METHODS ====================== */
   getColumnValues(): Record<string, number[]> {
     const data = this.userConfig["originalDataset"]; // the loaded CSV rows
@@ -123,7 +160,7 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
     if (!data) return {};
     const dtl = this.appConfig[this.global.appMode]?.attributeDatatypeList;
     if (!dtl) return {};
-    const catAttrs: string[] = (dtl['N'] || []).concat(dtl['O'] || []);
+    const catAttrs: string[] = (dtl['N'] || []).concat(dtl['O'] || []).filter((a: string) => a !== 'id');
     const result: Record<string, string[]> = {};
     catAttrs.forEach(attr => {
       const seen = new Set<string>();
@@ -285,6 +322,13 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
         context.removeFilter(attr, false, false);
       });
 
+      // For the mental health dataset, show all filters by default
+      if (context.global.appMode === "mental_health_data.csv") {
+        dataset.attributeList.forEach((attr: string) => {
+          if (attr !== "id") dataset["attributes"][attr]["filter"] = true;
+        });
+      }
+
       // if switching between datasets, re-initialize existing plot
       //  (otherwise this does nothing)
       initializePlotInstance(context, context.currentPlotType);
@@ -304,7 +348,13 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
       });
 
       context.chatService.getInteractionResponse().subscribe((obj) => {
+        const itype = obj["interaction_type"];
+        if (itype === "click_add_item" || itype === "click_remove_item") {
+          context.saveSelectedSubjects();
+          context.updateVis();
+        }
         let dataOut = obj["output_data"];
+
         if (dataOut != null) {
           let countObj = dataOut["data_point_distribution"][1]["counts"];
           // retrieve bias values
@@ -384,8 +434,14 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
     let context = this;
     let dataset = this.appConfig[this.global.appMode];
 
+    // Re-measure width in case the panel was hidden at init time
+    const measuredWidth = $(".awareness-panel-body").width();
+    if (measuredWidth) {
+      this.userConfig["sizes"]["awarenessPanel"]["width"] = measuredWidth - 100;
+    }
+
     // Sizes of each awareness panel
-    const width = this.userConfig["sizes"]["awarenessPanel"]["width"];
+    const width = this.userConfig["sizes"]["awarenessPanel"]["width"] || 150;
     const height = this.userConfig["sizes"]["awarenessPanel"]["height"];
 
     /* Attribute Distribution Plot - Start */
@@ -575,7 +631,7 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
               case "Focus":
                 if (
                   Object.values(interactedDataObj).length > 0 &&
-                  ["AWARENESS", "ADMIN"].indexOf(this.global.appType) !== -1
+                  ["CONTROL", "AWARENESS", "ADMIN"].indexOf(this.global.appType) !== -1
                 ) {
                   layerIndicesSet.add(1);
                 }
@@ -611,8 +667,8 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
           let domain, range;
           switch (this.global.appType) {
             case "CONTROL":
-              domain = ["Target"];
-              range = ["black"];
+              domain = ["Focus", "Target"];
+              range = ["#3498db", "black"];
               break;
             case "AWARENESS":
               domain = ["Focus", "Target"];
@@ -772,7 +828,6 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
    * Calculates color gradient of attribute/awareness panel bars.
    */
   getPanelCardBGImage(attribute, panelType) {
-    if (this.global.appType === "CONTROL") return "none";
     let context = this;
     let dataset = context.appConfig[context.global.appMode];
     let color = "#FFFFFFF"; // default color set to white
@@ -839,7 +894,6 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
    * Gets FONT COLOR of the bars.
    */
   getPanelCardTxtColor(attribute, panelType) {
-    if (this.global.appType === "CONTROL") return "black";
     let dataset = this.appConfig[this.global.appMode];
     let txtColor = "black"; // default text color
     if (panelType == "attributes" && this.userConfig.attributeColorScale == "Sequential") {
@@ -1417,7 +1471,7 @@ export class MainActivityComponent implements OnInit, AfterViewInit {
    * SORT the incoming awareness panel array based on the sort by parameter
    */
   customSortAwarenessPanel(array) {
-    if (this.global.appType == "CONTROL") return array;
+    if (this.global.appLayout == "CONTROL") return array;
     let dataset = this.appConfig[this.global.appMode];
     // remove primary Key and label Key from awareness panel
     const arrayCopy = JSON.parse(JSON.stringify(array)).filter(

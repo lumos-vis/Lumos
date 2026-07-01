@@ -1,9 +1,26 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
-import { Bin, PriorBelief } from '../../../models/prior-belief';
+import { Bin, PriorBelief, PriorCondition } from '../../../models/prior-belief';
 import { PriorBeliefStore } from '../../../store/prior-belief.store';
 import { BinningService } from '../../../services/binning.service';
 import { ChatService } from '../../../services/socket.service';
 import { SessionPage } from '../../../models/config';
+
+const ATTR_LABELS: Record<string, string> = {
+  child_age_years:               'Age (years)',
+  child_sex:                     'Sex',
+  screen_time_weekday:           'Daily Screen Time (hours)',
+  hours_sleep_weeknight:         'Sleep Hours (weeknight)',
+  days_physical_activity_week:   'Physical Activity (days/week)',
+  difficulty_making_friends:     'Difficulty Making Friends',
+  ever_diagnosed_depression:     'Diagnosed with Depression',
+  ever_diagnosed_anxiety:        'Diagnosed with Anxiety',
+  ever_diagnosed_dep_or_anx:     'Diagnosed with Depression or Anxiety',
+};
+
+const CONDITION_LABEL: Record<PriorCondition, string> = {
+  diagnosed:     'teens who have been diagnosed with depression or anxiety',
+  not_diagnosed: 'teens who have not been diagnosed with depression or anxiety',
+};
 
 @Component({
   selector: 'app-elicitation-modal',
@@ -19,18 +36,12 @@ export class ElicitationModalComponent {
   @Output() closed = new EventEmitter<void>();
 
   selectedAttribute: string | null = null;
+  currentCondition: PriorCondition = 'diagnosed';
   draftCounts: number[] = [];
   confidenceStep = false;
-  confidenceRating: number | null = null;
-  confidenceHover: number | null = null;
-  confidenceOptions = [
-    { value: 1, label: 'Not at all' },
-    { value: 2, label: 'Slightly' },
-    { value: 3, label: 'Somewhat' },
-    { value: 4, label: 'Quite' },
-    { value: 5, label: 'Extremely' },
-  ];
+  confidenceRating: number = 50;
   private pendingBelief: PriorBelief | null = null;
+  private draftsByCondition: Partial<Record<PriorCondition, number[]>> = {};
 
   constructor(
     private store: PriorBeliefStore,
@@ -41,6 +52,18 @@ export class ElicitationModalComponent {
 
   get allAttributes(): string[] {
     return this.attributes.concat(Object.keys(this.categoricalValues));
+  }
+
+  get conditionLabel(): string {
+    return CONDITION_LABEL[this.currentCondition];
+  }
+
+  cleanAttr(attr: string): string {
+    return ATTR_LABELS[attr] ?? attr.replace(/_/g, ' ');
+  }
+
+  get conditionStep(): number {
+    return this.currentCondition === 'diagnosed' ? 1 : 2;
   }
 
   isCategorical(attr: string): boolean {
@@ -63,15 +86,29 @@ export class ElicitationModalComponent {
 
   selectAttribute(attr: string) {
     this.selectedAttribute = attr;
+    this.currentCondition = 'diagnosed';
     this.confidenceStep = false;
-    this.confidenceRating = null;
-    const existing = this.store.getBelief(this.datasetId, attr);
-    if (existing) {
-      this.draftCounts = existing.counts.slice();
-    } else if (this.isCategorical(attr)) {
-      this.draftCounts = this.binningService.emptyCountsFor(this.categoricalValues[attr].length);
+    this.draftsByCondition = {};
+    this.confidenceRating = this.store.getBelief(this.datasetId, attr, 'diagnosed')?.confidence ?? 50;
+    this._loadDraft();
+  }
+
+  private _loadDraft() {
+    if (!this.selectedAttribute) return;
+    // priority: in-session draft > saved store belief > empty
+    if (this.draftsByCondition[this.currentCondition]) {
+      this.draftCounts = this.draftsByCondition[this.currentCondition]!.slice();
     } else {
-      this.draftCounts = this.binningService.emptyBallCounts();
+      const existing = this.store.getBelief(this.datasetId, this.selectedAttribute, this.currentCondition);
+      if (existing) {
+        this.draftCounts = existing.counts.slice();
+        this.draftsByCondition[this.currentCondition] = existing.counts.slice();
+      } else if (this.isCategorical(this.selectedAttribute)) {
+        this.draftCounts = this.binningService.emptyCountsFor(this.categoricalValues[this.selectedAttribute].length);
+      } else {
+        const bins = this.binningService.computeBins(this.currentValues);
+        this.draftCounts = this.binningService.emptyCountsFor(bins.length);
+      }
     }
   }
 
@@ -79,11 +116,16 @@ export class ElicitationModalComponent {
 
   onCountsChange(counts: number[]) {
     this.draftCounts = counts;
+    this.draftsByCondition[this.currentCondition] = counts.slice();
     this.counterClass = this.counterClass === 'pop-a' ? 'pop-b' : 'pop-a';
   }
 
   hasPrior(attr: string): boolean {
-    return !!this.store.getBelief(this.datasetId, attr);
+    return this.store.hasBothBeliefs(this.datasetId, attr);
+  }
+
+  hasConditionPrior(attr: string, condition: PriorCondition): boolean {
+    return !!this.store.getBelief(this.datasetId, attr, condition);
   }
 
   reset() {
@@ -102,6 +144,7 @@ export class ElicitationModalComponent {
       belief = {
         datasetId: this.datasetId,
         attribute: this.selectedAttribute,
+        condition: this.currentCondition,
         binEdges: cats.map((_, i) => i).concat(cats.length),
         counts: this.draftCounts,
         ballCount: this.binningService.ballCount,
@@ -114,6 +157,7 @@ export class ElicitationModalComponent {
       belief = {
         datasetId: this.datasetId,
         attribute: this.selectedAttribute,
+        condition: this.currentCondition,
         binEdges: bins.map(b => b.lo).concat(bins[bins.length - 1].hi),
         counts: this.draftCounts,
         ballCount: this.binningService.ballCount,
@@ -123,12 +167,14 @@ export class ElicitationModalComponent {
     }
     this.pendingBelief = belief;
     this.confidenceStep = true;
-    this.confidenceRating = null;
+    const saved = this.store.getBelief(this.datasetId, this.selectedAttribute, this.currentCondition);
+    this.confidenceRating = saved?.confidence ?? 50;
   }
 
   submitConfidence() {
-    if (!this.pendingBelief || this.confidenceRating === null) return;
-    const belief = { ...this.pendingBelief, confidence: this.confidenceRating };
+    if (!this.pendingBelief) return;
+    const belief = { ...this.pendingBelief, confidence: Number(this.confidenceRating) };
+    console.log('[prior] submitConfidence sending:', belief.attribute, belief.condition, 'confidence=', belief.confidence);
     this.store.setBelief(belief);
     this.chatService.sendPriors({
       participantId: this.global.participantId,
@@ -140,13 +186,46 @@ export class ElicitationModalComponent {
     });
     this.pendingBelief = null;
     this.confidenceStep = false;
-    this.confidenceRating = null;
-    this.selectedAttribute = null;
-    this.draftCounts = [];
+    this.confidenceRating = 50;
+
+    if (this.currentCondition === 'diagnosed') {
+      // move to second condition, preserving any existing not_diagnosed draft
+      this.currentCondition = 'not_diagnosed';
+      this.confidenceRating = this.store.getBelief(this.datasetId, this.selectedAttribute ?? '', 'not_diagnosed')?.confidence ?? 50;
+      this._loadDraft();
+    } else {
+      // both conditions done — back to attribute picker
+      this.selectedAttribute = null;
+      this.draftCounts = [];
+    }
+  }
+
+  goBack() {
+    // always persist current draft before navigating away
+    this.draftsByCondition[this.currentCondition] = this.draftCounts.slice();
+
+    if (this.confidenceStep) {
+      // confidence → distribution (same condition)
+      this.confidenceStep = false;
+      this.pendingBelief = null;
+      this._loadDraft();
+    } else if (this.currentCondition === 'not_diagnosed') {
+      // not_diagnosed distribution → diagnosed confidence
+      this.currentCondition = 'diagnosed';
+      this.confidenceStep = true;
+      const existing = this.selectedAttribute ? this.store.getBelief(this.datasetId, this.selectedAttribute, 'diagnosed') : null;
+      if (existing) {
+        this.pendingBelief = { ...existing };
+        this.confidenceRating = existing.confidence ?? 50;
+      }
+    } else {
+      // diagnosed distribution → picker
+      this.selectedAttribute = null;
+    }
   }
 
   get canClose(): boolean {
-    return this.allAttributes.some(attr => this.hasPrior(attr));
+    return this.allAttributes.every(attr => this.hasPrior(attr));
   }
 
   close() {

@@ -2,34 +2,43 @@
 import { Injectable } from '@angular/core';
 import { Bin } from '../models/prior-belief';
 
-const BIN_COUNT = 10;
 const BALL_COUNT = 30;
 
 @Injectable({ providedIn: 'root' })
 export class BinningService {
 
-  readonly binCount = BIN_COUNT;
   readonly ballCount = BALL_COUNT;
 
   computeBins(values: number[]): Bin[] {
-    const min = values.reduce((a, b) => a < b ? a : b);
-    const max = values.reduce((a, b) => a > b ? a : b);
-    const step = (max - min) / BIN_COUNT;
+    const nums = values.map(Number);
+    const rawMin = nums.reduce((a, b) => a < b ? a : b);
+    const rawMax = nums.reduce((a, b) => a > b ? a : b);
 
-    return Array.from({ length: BIN_COUNT }, (_, i) => {
-      const lo = min + (i * step);
-      const hi = min + ((i + 1) * step);
-      // for each bin return a range of lo and hi, and a label like "20–60"
-      return {
-        lo,
-        hi,
-        label: `${this.fmt(lo, step)}–${this.fmt(hi, step)}`,
-      };
+    // One bin per integer value when range is small and all values are integers
+    const allIntegers = nums.every(v => Number.isInteger(v));
+    const range = rawMax - rawMin;
+    if (allIntegers && range <= 10) {
+      return Array.from({ length: range + 1 }, (_, i) => {
+        const v = rawMin + i;
+        return { lo: v, hi: v + 1, label: String(v) };
+      });
+    }
+
+    const rawStep = range / 10;
+    const step = this.niceStep(rawStep);
+    const min = Math.floor(rawMin / step) * step;
+    const max = Math.ceil(rawMax / step) * step;
+    const count = Math.round((max - min) / step);
+
+    return Array.from({ length: count }, (_, i) => {
+      const lo = min + i * step;
+      const hi = min + (i + 1) * step;
+      return { lo, hi, label: `${this.fmt(lo, step)}–${this.fmt(hi, step)}` };
     });
   }
 
-  emptyBallCounts(): number[] {
-    return new Array(BIN_COUNT).fill(0);
+  emptyBallCounts(n = 10): number[] {
+    return new Array(n).fill(0);
   }
 
   emptyCountsFor(n: number): number[] {
@@ -39,16 +48,22 @@ export class BinningService {
   categoricalBins(categories: string[]): Bin[] {
     return categories.map((cat, i) => ({ lo: i, hi: i + 1, label: cat }));
   }
-  // formatting the label of bin based on step size
-  // step >= 10: no decimal places
-  // step >= 1: 1 decimal place
-  // step >= 0.1: 2 decimal places
-  // step < 0.1: 3 decimal places
-  
+
+  private niceStep(rawStep: number): number {
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const normalized = rawStep / magnitude;
+    let nice: number;
+    if (normalized <= 1)      nice = 1;
+    else if (normalized <= 2) nice = 2;
+    else if (normalized <= 5) nice = 5;
+    else                      nice = 10;
+    return Math.max(nice * magnitude, 1);
+  }
+
   private fmt(n: number, step: number): string {
     if (step >= 10)  return n.toFixed(0);
-    if (step >= 1)   return n.toFixed(1);
-    if (step >= 0.1) return n.toFixed(2);
-    return n.toFixed(3);
+    if (step >= 1)   return n.toFixed(0);
+    if (step >= 0.1) return n.toFixed(1);
+    return n.toFixed(2);
   }
 }

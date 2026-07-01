@@ -77,7 +77,7 @@ export class StripPlot {
 
     // Add legend group, text and gradient rectangle
     context.stripPlotConfig.legendGroup = context.plotGroup.append("g").classed("legend", true);
-    if (context.global.appType !== "CONTROL") {
+    if (true) {
       const pad = 5; // padding (px) between elements
       const gradRectWidth = context.plotWidth / 5; // width of gradient rectangle
       const leftLabel = "Less Focus"; // label on the left of the legend gradient
@@ -421,7 +421,7 @@ export class StripPlot {
         // default/selected stroke is DIFFERENT than data point color!!
         if (dataPoint["selected"]) {
           return "brown"; // selected color
-        } else if (context.global.appType !== "CONTROL" && dataPoint["timesVisited"] > 0 && dataset["colorByMode"]) {
+        } else if (dataPoint["timesVisited"] > 0 && dataset["colorByMode"]) {
           return dataPoint["color"]; // bias color
         } else {
           return "black"; // default color

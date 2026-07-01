@@ -17,11 +17,13 @@ export class SessionPage {
   constructor(private utils: UtilsService) {}
   "app-practice": object = { completed: false, timestamp: 0 };
   "app-live": object = { completed: false, timestamp: 0 };
-  "participantId": string = participantId; // 12 character long unique identifier
+  "participantId": string = participantId;
+  "participantIdSource": string = participantIdSource;
   "appMode": string = "mental_health_data.csv"; // Name of the dataset
   "appLevel": string = "live"; // Practice / Live
   // "appType": string = this.utils.generateRandomAppType(); // CONTROL / AWARENESS
   "appType": string = "AWARENESS"; // CONTROL | ADMIN | AWARENESS
+  "appLayout": string = "AWARENESS"; // tracks original URL ?type= for layout purposes
 }
 
 export const DeploymentConfig = Object.freeze({
@@ -134,7 +136,7 @@ export var UserConfig = {
   attributeControlSortByModes: ["default", "reverse-dtype", "dtype", "A-Z, 0-9", "Z-A, 9-0"],
   attributeSortByModes: ["default", "reverse-dtype", "dtype", "Focus 1-0", "Focus 0-1", "A-Z, 0-9", "Z-A, 9-0"],
   awarenessSortByModes: ["Bias 1-0", "Bias 0-1", "A-Z, 0-9", "Z-A, 9-0"],
-  awarenessVisLayers: ["Data", "Focus", "Selection"],
+  awarenessVisLayers: ["Target", "Focus", "Selection"],
   awarenessVisLayerTypes: ["Data", "Focus", "Selection"],
   interpolateModes: [
     "monotone",
@@ -955,6 +957,7 @@ export const AppConfig = {
     dataset: "mental_health_data.csv",
     primaryKey: "id",
     labelKey: "",
+    chartType: "scatterplot",
     orderedAttributeList: [
       "id",
       "child_age_years",
@@ -963,8 +966,6 @@ export const AppConfig = {
       "hours_sleep_weeknight",
       "days_physical_activity_week",
       "difficulty_making_friends",
-      "ever_diagnosed_depression",
-      "ever_diagnosed_anxiety",
       "ever_diagnosed_dep_or_anx",
     ],
     attributes: {
@@ -1014,18 +1015,6 @@ export const AppConfig = {
       },
       difficulty_making_friends: {
         name: "difficulty_making_friends",
-        datatype: "N",
-        types: [],
-        filterModel: [],
-      },
-      ever_diagnosed_depression: {
-        name: "ever_diagnosed_depression",
-        datatype: "N",
-        types: [],
-        filterModel: [],
-      },
-      ever_diagnosed_anxiety: {
-        name: "ever_diagnosed_anxiety",
         datatype: "N",
         types: [],
         filterModel: [],
