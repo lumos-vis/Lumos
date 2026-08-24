@@ -266,8 +266,13 @@ def main():
                "bias_logs": [mouseout("t0", x=x, y=y)] if (x or y) else [],
                "response_list": [filter_log("filter_added", f) for f in filters]}
         orig = dc_adapter.selection_percentile_by_var
+        # selected_by_var is accepted and ignored: this stub exists to drive the
+        # HIERARCHY deterministically off `pcts`, so how each percentile would have
+        # been computed (shared selection vs per-variable eligible set) is beside the
+        # point here. The per-variable sets are covered in test_scoped_selection.py.
         dc_adapter.selection_percentile_by_var = (
-            lambda det, sel, n_trials=1000, rng=None, variables=None:
+            lambda det, sel, n_trials=1000, rng=None, variables=None,
+                   selected_by_var=None:
                 {v: pcts[v] for v in pcts
                  if variables is None or v in set(variables)})
         try:
@@ -405,7 +410,10 @@ def main():
     # deterministic: full-scoring makes var_b (0.99) the argmax, but var_b is inactive.
     full_scores = {"var_a": 0.90, "var_b": 0.99, "var_c": 0.30}
 
-    def scoped_stub(det, sel, n_trials=1000, rng=None, variables=None):
+    def scoped_stub(det, sel, n_trials=1000, rng=None, variables=None,
+                    selected_by_var=None):
+        # selected_by_var accepted and ignored -- this stub is about SCOPING, not about
+        # which ids each variable is scored on (see test_scoped_selection.py for that).
         if variables is None:
             return dict(full_scores)     # all-vars view: var_b (0.99) would win
         wanted = set(variables)

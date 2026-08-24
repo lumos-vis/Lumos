@@ -177,15 +177,90 @@ def get_current_axes(client_record):
     return {"x": None, "y": None}
 
 
-def get_current_filters(client_record):
-    """The attributes with a filter currently turned on -> set of variable names.
+def _attribute_domain(app_mode, attribute):
+    """The attribute's FULL (unfiltered) domain in this dataset, or None if unknown.
+
+    -> ("numeric", (min, max)) | ("categorical", frozenset(values)) | None
+
+    Read from bias.DATA_MAP's precomputed distribution -- the same structure the
+    server already builds at startup (bias.precompute_distributions), so this needs no
+    new logging and no new source of truth: for a numerical attribute the distribution
+    is a SORTED list of every value in the column, whose ends are exactly the min/max
+    the frontend slider was configured with; for a categorical one it is a
+    {value: count} dict whose keys are exactly the frontend's `types` domain. Both
+    sides derive theirs from the same CSV, so they agree by construction.
+
+    None means "cannot tell" -- an unknown app_mode, a dataset whose distributions were
+    never precomputed (every unit test that builds a minimal record), or an attribute
+    that is not in this dataset. Callers must treat None as "no opinion" rather than as
+    "unconstrained"; see _filter_is_constraining.
+
+    bias is imported at CALL time, not module scope: it pulls in scipy and reads CSVs,
+    and llm_intervention is imported by tests that never touch a real dataset. Same
+    call-time-import convention dc_metric.dwell_percentile_ready uses.
+    """
+    try:
+        import bias
+        dataset = bias.DATA_MAP.get(app_mode)
+        if not dataset:
+            return None
+        distribution = dataset.get("distribution", {}).get(attribute)
+        if not distribution:
+            return None
+        if attribute in dataset.get("numerical_attributes", []):
+            return "numeric", (distribution[0], distribution[-1])
+        return "categorical", frozenset(str(v) for v in distribution)
+    except Exception:
+        return None
+
+
+def _filter_is_constraining(app_mode, attribute, value):
+    """Does this filterModel actually NARROW the attribute, or is it just switched on?
+
+    Shiyao's item 9: a filter the participant has merely touched is not evidence they
+    are reasoning about that variable -- only one that actually excludes rows is. The
+    comparison is against the attribute's full domain (_attribute_domain):
+
+      numeric (Q/T):     value is the slider's [lo, hi]. Constraining iff that pair
+                         differs from [min, max]. Ends are compared after
+                         bias_util.cast_to_num because the slider can emit strings, and
+                         are normalised with min()/max() so a reversed pair is not
+                         mistaken for a constraint.
+      categorical (N/O): value is a plain list of the selected category strings (the
+                         multiselect binds straight to `types`, with no {id, text}
+                         wrapping). Constraining iff that SET differs from the full
+                         category set -- compared as sets, so ordering never matters.
+
+    FALLS BACK TO TRUE (constraining) whenever the question cannot be answered: no
+    value on the event, a value of an unexpected shape, or an unknown domain. That
+    keeps this strictly a refinement -- an unprovable case behaves exactly as the old
+    unconditional "a change means it is on" rule did, so no signal is silently dropped
+    and every record built without dataset context keeps its previous meaning.
+    """
+    domain = _attribute_domain(app_mode, attribute)
+    if domain is None or not isinstance(value, (list, tuple)):
+        return True
+    kind, full = domain
+    if kind == "numeric":
+        if len(value) != 2:
+            return True
+        try:
+            ends = [bias_util.cast_to_num(v) for v in value]
+        except TypeError:
+            return True
+        if any(not isinstance(v, (int, float)) for v in ends):
+            return True
+        return [min(ends), max(ends)] != [full[0], full[1]]
+    return {str(v) for v in value} != full
+
+
+def get_current_filters(client_record, app_mode=None):
+    """The attributes with a CONSTRAINING filter currently applied -> set of names.
 
     Filter events are NOT in bias_logs (they are not in COMPUTE_BIAS_FOR_TYPES), but
     every interaction, filter events included, is appended to response_list, so the
     active-filter set is reconstructed by replaying that list in order -- the same
-    add/remove replay dc_adapter.selected_ids uses for the selection. "Active" means
-    the filter is turned ON (from filter_added onward); it is NOT gated on a value
-    having been set, so filter_changed alone also counts.
+    add/remove replay dc_adapter.selected_ids uses for the selection.
 
     response_list wraps each message under "input_data" (unlike bias_logs, which
     stores the raw data), so the interactionType and attribute are read from there.
@@ -194,12 +269,37 @@ def get_current_filters(client_record):
       filter_added        -> add the attribute
       filter_removed      -> discard it
       all_filters_removed -> clear the whole set
-      filter_changed      -> ensure the attribute is present (a value change implies
-                             the filter is on, even if no filter_added was seen first)
+      filter_changed      -> add it if the new filterModel CONSTRAINS the attribute,
+                             otherwise DISCARD it (see below)
+
+    "Active" used to mean "switched on at some point": filter_changed unconditionally
+    added, and nothing but an explicit removal ever took an attribute back out. It now
+    means the filter is actually EXCLUDING ROWS (Shiyao's item 9) -- a change back to
+    the full range or the full category set deactivates the attribute again. This is
+    the first rule that can deactivate on a value change, which matters because in the
+    live study filter_changed is the ONLY filter event the UI can emit: the study
+    dataset enables every attribute's filter row at load without a message, which
+    leaves the add button disabled, and the remove button is hidden under the CONTROL
+    layout every study condition runs. The other three rules are kept because they are
+    structurally correct and reachable from other datasets/layouts -- they are simply
+    not what the study exercises.
+
+    llmTheme-sourced changes (data.filterType == "llmTheme", emitted when a participant
+    applies a recommended theme) are deliberately NOT special-cased: an applied theme
+    really does constrain the data, so it counts exactly like a hand-set filter.
+
+    app_mode selects the dataset whose ranges the comparison is against. Resolved in
+    order: the explicit argument (how filters_active_as_of passes it, since it hands in
+    a synthetic record holding only a response_list slice), then the client record's own
+    "app_mode", then the individual message's "appMode" -- every logged interaction
+    carries one, so a record assembled from raw messages still resolves. Unresolvable
+    (or a dataset with no precomputed distributions, as in the unit tests) leaves every
+    filter_changed treated as constraining, i.e. exactly the old behaviour.
 
     Empty or absent response_list -> empty set (matches how the dwell tests build
     minimal records without this key).
     """
+    record_mode = app_mode if app_mode is not None else client_record.get("app_mode")
     active = set()
     for entry in client_record.get("response_list", []):
         message = entry.get("input_data", {})
@@ -207,13 +307,20 @@ def get_current_filters(client_record):
         if itype == "all_filters_removed":
             active.clear()
             continue
-        attribute = message.get("data", {}).get("attribute")
+        data = message.get("data", {})
+        attribute = data.get("attribute")
         if attribute is None:
             continue
-        if itype in ("filter_added", "filter_changed"):
+        if itype == "filter_added":
             active.add(attribute)
         elif itype == "filter_removed":
             active.discard(attribute)
+        elif itype == "filter_changed":
+            mode = record_mode if record_mode is not None else message.get("appMode")
+            if _filter_is_constraining(mode, attribute, data.get("value")):
+                active.add(attribute)
+            else:
+                active.discard(attribute)
     return active
 
 

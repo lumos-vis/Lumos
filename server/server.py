@@ -576,6 +576,10 @@ async def on_interaction(sid, data):
                 "target_var": result.get("target_var"),
                 "target_percentile": result.get("target_percentile"),
                 "percentile_by_var": result.get("percentile_by_var"),
+                # Variables dropped before null-sampling (flat, signal-free scope),
+                # so analysis can tell them from a genuine below-threshold miss --
+                # the same field the dwell_trigger record carries.
+                "excluded_vars": result.get("excluded_vars"),
                 "selection_bias": selection["selection_bias"],
                 "selection_bias_v": selection["selection_bias_v"],
                 "n_selected": selection["n_selected"],

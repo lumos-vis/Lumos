@@ -367,6 +367,38 @@ def compute_dwell_percentile(detailed_map, dwell, n_trials=1000, rng=None):
     }
 
 
+# A variable whose re-pooled per-teen DC is CONSTANT carries no signal, and its null
+# distribution collapses onto its real value -- every draw ties, so the percentile is a
+# guaranteed 1.0 and the variable would clear any threshold on every check. The clearest
+# way in is w_v == 0 (the participant drew the diagnosed and non-diagnosed distributions
+# identically for that variable, so dc_metric.vba returns log(1)=0 in every bin), which
+# scoped_detailed_map's 0/0 guard turns into dc 0.0 for all teens. The tolerance is a
+# float-noise margin, not a modelling knob: a spread this small is not a real signal.
+DEGENERATE_DC_EPSILON = 1e-12
+
+
+def is_degenerate_scope(scoped):
+    """True when a single-variable scoped map carries no signal to test.
+
+    Every teen's re-pooled DC being the SAME value makes the null test vacuous rather
+    than extreme: dwell_bias is (constant - constant) = 0 for the real value AND for
+    every null draw, so dwell_bias_percentile returns a guaranteed 1.0 and the variable
+    would clear any threshold on every check, forever. The clearest way in is w_v == 0 --
+    the participant drew the two groups identically for that variable, so vba returns
+    log(1)=0 in every bin and scoped_detailed_map's 0/0 guard yields dc 0.0 for all teens
+    -- which is real participant behaviour, not a corrupt map.
+
+    Detected HERE, on the scoped map, rather than from the weights: this is the exact
+    quantity the null is drawn over, so it catches every route to a flat DC (a zero
+    weight, a constant C_v, a one-teen map) without enumerating them. Checked BEFORE
+    sampling, so an excluded variable costs no Monte Carlo.
+    """
+    dcs = [entry["dc"] for entry in scoped.values()]
+    if not dcs:
+        return True
+    return (max(dcs) - min(dcs)) <= DEGENERATE_DC_EPSILON
+
+
 def scoped_detailed_map(dc_map_detailed, visible_vars):
     """Re-pool each teen's DC over ONLY the currently-visible axis variables.
 
@@ -430,8 +462,39 @@ def scoped_detailed_map(dc_map_detailed, visible_vars):
     return scoped
 
 
+def degenerate_vars(dc_map_detailed, variables=None):
+    """Which of these variables are DEGENERATE -> {variable: "degenerate_null"}.
+
+    The logging companion to selection_percentile_by_var, which silently OMITS such a
+    variable so it cannot become a candidate. Absence alone is ambiguous in a log -- a
+    variable can also be missing because it is not a belief variable at all -- so this
+    names the ones dropped for degeneracy specifically, giving the selection trigger the
+    same {variable: code} marker the dwell trace carries.
+
+    Same variable selection and the same is_degenerate_scope verdict the scorer uses, so
+    the two can never disagree about which variables were dropped. Cheap by design: it
+    re-pools DC per variable but runs NO null-sampling, which is the expensive half.
+
+    Purely diagnostic, so it never raises: a map that is empty or not in the detailed
+    {teen: {"dc", "consistency", "weights"}} shape yields {} ("no opinion") rather than
+    propagating. Losing the marker costs a log line; it cannot affect candidacy, which
+    is decided by the scorer omitting the variable on its own.
+    """
+    try:
+        if not dc_map_detailed:
+            return {}
+        belief_vars = list(next(iter(dc_map_detailed.values()))["consistency"].keys())
+        if variables is not None:
+            wanted = set(variables)
+            belief_vars = [v for v in belief_vars if v in wanted]
+        return {v: "degenerate_null" for v in belief_vars
+                if is_degenerate_scope(scoped_detailed_map(dc_map_detailed, [v]))}
+    except Exception:
+        return {}
+
+
 def selection_percentile_by_var(dc_map_detailed, selected_ids, n_trials=1000,
-                                rng=None, variables=None):
+                                rng=None, variables=None, selected_by_var=None):
     """SelectionBias percentile per belief variable, one variable at a time.
 
     Selection has no axes to scope to (unlike the dwell trigger), so instead of one
@@ -449,6 +512,14 @@ def selection_percentile_by_var(dc_map_detailed, selected_ids, n_trials=1000,
         n_trials: null draws per variable (passed straight through, never reduced).
         rng: numpy Generator for reproducible tests, or None for the np.random
             global (the live default), matching selection_bias_percentile.
+        selected_by_var: optional {variable: ids} of PER-VARIABLE eligible selections.
+            When given, variable v is scored against selected_by_var.get(v) instead of
+            the shared selected_ids -- each variable judged only on the picks made while
+            it was actually active (llm_trigger.eligible_selection_by_var). A variable
+            absent from the mapping is scored against an empty set, which
+            selection_bias_percentile already reports as None (k == 0). None (the
+            default) keeps the original behaviour of scoring every variable against the
+            one shared selection, which is what the pooled submit-time path wants.
         variables: optional collection restricting WHICH variables are scored. None
             (the default) preserves the original behavior -- score EVERY belief
             variable in the map. When given, only the intersection with the map's
@@ -460,12 +531,19 @@ def selection_percentile_by_var(dc_map_detailed, selected_ids, n_trials=1000,
             nothing-to-fire, matching a total miss).
 
     Returns:
-        {variable: percentile} over the scored variables (all belief variables when
-        variables is None, else the active intersection). Each percentile is in
-        [0, 1], or None for the k == 0 case selection_bias_percentile already guards
-        (nothing selected is present in the map -- identical across variables, since
-        scoping changes each teen's DC but not which teens exist). {} for an empty
-        map, or for an empty variables intersection.
+        {variable: percentile} over the variables actually SCORED. Each percentile is
+        in [0, 1], or None for the k == 0 case selection_bias_percentile already guards
+        (nothing eligible for that variable is present in the map). {} for an empty map,
+        or for an empty variables intersection.
+
+        A variable whose scope is DEGENERATE (constant DC across every teen -- see
+        is_degenerate_scope) is OMITTED entirely rather than scored: its null collapses
+        onto its real value, so it would return a guaranteed 1.0 and clear any threshold
+        on every check. Being absent is what keeps it out of candidacy, exactly as the
+        dwell scorer drops such a variable from its own percentile dict. Callers wanting
+        to LOG which variables were dropped that way ask degenerate_vars for the same
+        verdict; the check runs before any sampling, so an omitted variable costs no
+        Monte Carlo here either.
 
     The belief-variable list is read the same way dwell_bias_v reads it (the
     consistency keys of any entry), so the two stay in lockstep on what "all
@@ -484,7 +562,13 @@ def selection_percentile_by_var(dc_map_detailed, selected_ids, n_trials=1000,
     out = {}
     for v in scored_vars:
         scoped = scoped_detailed_map(dc_map_detailed, [v])
+        if is_degenerate_scope(scoped):
+            continue
         scalar_dc = {tid: entry["dc"] for tid, entry in scoped.items()}
+        # Per-variable eligible selection when the caller supplied one, else the single
+        # shared selection (the original, still the pooled submit-time behaviour).
+        ids_for_v = (selected_by_var.get(v, ()) if selected_by_var is not None
+                     else selected_ids)
         out[v] = dc_metric.selection_bias_percentile(
-            scalar_dc, selected_ids, n_trials, rng)
+            scalar_dc, ids_for_v, n_trials, rng)
     return out

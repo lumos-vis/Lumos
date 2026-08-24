@@ -62,15 +62,11 @@ SYSTEM_FIRE_COOLDOWN_MS = 30_000   # min REAL (wall-clock) time between any two 
                                    # interventions, layered on top of the per-variable
                                    # recheck spacing above (Shiyao's system-wide cooldown)
 
-# A variable whose re-pooled per-teen DC is CONSTANT carries no signal, and its null
-# distribution collapses onto its real value -- every draw ties, so the percentile is a
-# guaranteed 1.0 and the variable would fire on every single check. The clearest way in
-# is w_v == 0 (the participant drew the diagnosed and non-diagnosed distributions
-# identically for that variable, so vba returns log(1)=0 in every bin), which
-# scoped_detailed_map's 0/0 guard turns into dc 0.0 for all teens. Such a variable is
-# dropped from candidacy BEFORE any null sampling rather than scored. The tolerance is
-# a float-noise margin, not a modelling knob: a spread this small is not a real signal.
-DEGENERATE_DC_EPSILON = 1e-12
+# The degenerate-scope guard now lives in dc_adapter, because BOTH this module's dwell
+# scorer and dc_adapter's own selection scorer need it and dc_adapter cannot import
+# llm_trigger (the dependency runs the other way). Aliased here so this module's
+# references -- and the dwell tests that reach for these names -- are unchanged.
+DEGENERATE_DC_EPSILON = dc_adapter.DEGENERATE_DC_EPSILON
 
 # --------------------------------------------------------------------------- #
 # Selection gate -- scored on the participant's RUNNING SELECTION rather than on
@@ -103,6 +99,10 @@ def _axis_and_filter_vars(client_record):
 
     A variable that is BOTH on an axis and filtered appears in both sets; _reduce_by_
     priority resolves that to the AXIS tier (axis membership wins).
+
+    "Filtered" means the filter actually CONSTRAINS the attribute, not merely that it
+    has been touched (Shiyao's item 9) -- get_current_filters reads the dataset ranges
+    off the record's own "app_mode" to decide, so no mode has to be passed here.
     """
     axes = llm_intervention.get_current_axes(client_record)
     axis_vars = {v for v in (axes.get("x"), axes.get("y")) if v is not None}
@@ -181,7 +181,7 @@ def _reduce_by_priority(percentile_by_var, axis_vars, client_record, threshold):
 # each variable earned WHILE IT WAS ACTIVE, and on which teens -- not the global
 # pooled dwell re-sliced by whatever is active now.
 # --------------------------------------------------------------------------- #
-def filters_active_as_of(response_list, bound_ms):
+def filters_active_as_of(response_list, bound_ms, app_mode=None):
     """The active-filter set as of a past moment -> set of attribute names.
 
     The time-bounded generalization of llm_intervention.get_current_filters, which
@@ -197,6 +197,19 @@ def filters_active_as_of(response_list, bound_ms):
     minimal unit records) means "no bound" -> every filter, identical to get_current_
     filters. A response_list entry with no timestamp is treated as pre-existing (kept),
     so untimestamped test records behave as they did before this change.
+
+    app_mode is threaded straight through to get_current_filters, which needs it to
+    decide whether a filter_changed actually CONSTRAINS its attribute (Shiyao's item 9)
+    rather than merely switching it on. It has to be passed explicitly here: the record
+    handed down is synthetic -- a bare {"response_list": prefix} -- so there is no
+    client record for get_current_filters to read the mode off. None leaves the
+    constraint test unresolvable, which falls back to the old "a change means it is on"
+    behaviour; see _filter_is_constraining.
+
+    This function itself needs no other change to pick up item 9: it has always
+    delegated the add/remove/change rules to get_current_filters rather than
+    duplicating them, precisely so the two can never drift, so the new deactivate-on-
+    unconstrain rule reaches every as-of query for free.
     """
     if bound_ms is None:
         prefix = response_list
@@ -204,7 +217,8 @@ def filters_active_as_of(response_list, bound_ms):
         prefix = [e for e in response_list
                   if (_response_interaction_at(e) is None
                       or _response_interaction_at(e) <= bound_ms)]
-    return llm_intervention.get_current_filters({"response_list": prefix})
+    return llm_intervention.get_current_filters(
+        {"response_list": prefix}, app_mode=app_mode)
 
 
 def _response_interaction_at(entry):
@@ -215,7 +229,34 @@ def _response_interaction_at(entry):
     return entry.get("input_data", {}).get("interactionAt")
 
 
-def eligible_dwell_by_teen_by_var(bias_logs, response_list):
+def _attributed_vars(entry, response_list, app_mode=None):
+    """The variables ONE logged event is attributed to -> set of names.
+
+        {the event's own data.x.name, data.y.name}   (the axes as they stood at emit
+                                                      time, carried on the entry itself)
+      UNION filters_active_as_of(response_list, the event's interactionAt, app_mode)
+                                                     (the filters that were CONSTRAINING
+                                                      at that moment, replayed only up
+                                                      to it -- not to "now")
+
+    The single definition of "what was the participant working with when this happened",
+    shared by the dwell replay and the selection replay so the two can never disagree
+    about attribution. Both hover messages and the three selection-click messages are
+    built by the same frontend initializeNewMessage and carry the same x/y/interactionAt
+    fields, so one rule genuinely covers both.
+
+    A missing interactionAt leaves the filter half unbounded, which filters_active_as_of
+    documents as "every filter" -- the minimal-record behaviour the unit tests rely on.
+    """
+    data = entry.get("data", {})
+    x = data.get("x") if isinstance(data.get("x"), dict) else {}
+    y = data.get("y") if isinstance(data.get("y"), dict) else {}
+    active = {n for n in (x.get("name"), y.get("name")) if n is not None}
+    active |= filters_active_as_of(response_list, entry.get("interactionAt"), app_mode)
+    return active
+
+
+def eligible_dwell_by_teen_by_var(bias_logs, response_list, app_mode=None):
     """Per-variable, PER-TEEN eligible dwell -> {variable: {teen_id: ms}}.
 
     THE evidence base for the whole dwell trigger -- both the readiness/recheck gates
@@ -262,17 +303,14 @@ def eligible_dwell_by_teen_by_var(bias_logs, response_list):
         if isinstance(tid, list) or tid is None or tid == "-":
             continue
         duration = float(entry.get("interactionDuration", 0) or 0)
-        x = data.get("x") if isinstance(data.get("x"), dict) else {}
-        y = data.get("y") if isinstance(data.get("y"), dict) else {}
-        active = {n for n in (x.get("name"), y.get("name")) if n is not None}
-        active |= filters_active_as_of(response_list, entry.get("interactionAt"))
+        active = _attributed_vars(entry, response_list, app_mode)
         for var in active:
             per_teen = by_var.setdefault(var, {})
             per_teen[tid] = per_teen.get(tid, 0.0) + duration
     return by_var
 
 
-def eligible_dwell_seconds_by_var(bias_logs, response_list):
+def eligible_dwell_seconds_by_var(bias_logs, response_list, app_mode=None):
     """Per-variable eligible dwell seconds -> {variable: seconds}.
 
     The readiness/cooldown-facing view of eligible_dwell_by_teen_by_var: the same replay,
@@ -285,7 +323,74 @@ def eligible_dwell_seconds_by_var(bias_logs, response_list):
     """
     return {var: sum(per_teen.values()) / 1000.0
             for var, per_teen in
-            eligible_dwell_by_teen_by_var(bias_logs, response_list).items()}
+            eligible_dwell_by_teen_by_var(bias_logs, response_list, app_mode).items()}
+
+
+SELECTION_CLICK_TYPES = ("click_add_item", "click_remove_item", "click_group")
+
+
+def eligible_selection_by_var(bias_logs, response_list, app_mode=None):
+    """Per-variable eligible SELECTION sets -> {variable: set(teen_id)}.
+
+    Shiyao's items 7-8. A selection is evidence about the variable the participant was
+    LOOKING AT WHEN THEY MADE IT, not about whatever happens to be on screen when the
+    check runs. Scoring every variable against one global selection set attributes each
+    pick to all of them at once, so a variable inherits picks made while it was nowhere
+    in view.
+
+    Replays the three selection clicks in bias_logs in order (the same events, and the
+    same click_group toggle semantics, that dc_adapter.selected_ids replays for the
+    global set -- its _ids_of is REUSED rather than re-implemented so the two can never
+    disagree about which raw ids an event carries):
+
+      ADD (click_add_item, or a click_group that is selecting) -- attribute the id(s) to
+        every variable in _attributed_vars for THAT event: its own carried axes, plus
+        the filters that were constraining as of its own interactionAt. The attribution
+        is FIXED at this moment and never recomputed.
+
+      DESELECT (click_remove_item, or a click_group that is deselecting) -- drop the
+        id(s) from EVERY variable's set they appear in, UNCONDITIONALLY. Deliberately
+        not re-derived from what is active now: the point stops being evidence for
+        whatever it was evidence for, and re-deriving would strand it under a variable
+        the participant has since navigated away from (item 8).
+
+      RE-SELECTION is simply a later ADD, so it earns a FRESH as-of tag -- a point
+      picked under var_a, dropped, and picked again under var_c counts for var_c only.
+
+    ONE pass over bias_logs. A variable never active during any selection is absent
+    entirely; a caller reading it with .get(v, ()) sees an empty set, which
+    dc_metric.selection_bias_percentile already reports as None (k == 0).
+
+    The global selection is tracked alongside purely to interpret click_group, whose
+    message is a toggle: it deselects only when every id it carries is currently
+    selected, exactly as dc_adapter.selected_ids decides it.
+    """
+    by_var = {}
+    selected = set()
+    for entry in bias_logs:
+        itype = entry.get("interactionType")
+        if itype not in SELECTION_CLICK_TYPES:
+            continue
+        ids = dc_adapter._ids_of(entry)
+        if not ids:
+            continue
+        if itype == "click_add_item":
+            adding = True
+        elif itype == "click_remove_item":
+            adding = False
+        else:
+            # click_group toggles: a group whose ids are ALL already selected is being
+            # deselected; anything else (including a partial overlap) is selecting.
+            adding = not all(i in selected for i in ids)
+        if adding:
+            selected.update(ids)
+            for var in _attributed_vars(entry, response_list, app_mode):
+                by_var.setdefault(var, set()).update(ids)
+        else:
+            selected.difference_update(ids)
+            for eligible_ids in by_var.values():
+                eligible_ids.difference_update(ids)
+    return by_var
 
 
 def evaluate_trigger(client_record, dwell_metrics, now_ms=None):
@@ -417,7 +522,8 @@ def evaluate_trigger(client_record, dwell_metrics, now_ms=None):
     # cooldown especially -- skip its O(hovers x response_list) replay; it is pure, so
     # deferring it changes nothing but wasted work.
     dwell_by_var = eligible_dwell_by_teen_by_var(
-        bias_logs, client_record.get("response_list", []))
+        bias_logs, client_record.get("response_list", []),
+        client_record.get("app_mode"))
     eligible = {v: sum(per_teen.values()) / 1000.0
                 for v, per_teen in dwell_by_var.items()}
 
@@ -511,26 +617,7 @@ def _belief_vars_in(dc_map_detailed):
     return set(next(iter(dc_map_detailed.values()))["consistency"].keys())
 
 
-def _is_degenerate_scope(scoped):
-    """True when a single-variable scoped map carries no signal to test.
-
-    Every teen's re-pooled DC being the SAME value makes the null test vacuous rather
-    than extreme: dwell_bias is (constant - constant) = 0 for the real value AND for
-    every null draw, so dwell_bias_percentile returns a guaranteed 1.0 and the variable
-    would clear any threshold on every check, forever. The clearest way in is w_v == 0 --
-    the participant drew the two groups identically for that variable, so vba returns
-    log(1)=0 in every bin and scoped_detailed_map's 0/0 guard yields dc 0.0 for all teens
-    -- which is real participant behaviour, not a corrupt map.
-
-    Detected HERE, on the scoped map, rather than from the weights: this is the exact
-    quantity the null is drawn over, so it catches every route to a flat DC (a zero
-    weight, a constant C_v, a one-teen map) without enumerating them. Checked BEFORE
-    sampling, so an excluded variable costs no Monte Carlo.
-    """
-    dcs = [entry["dc"] for entry in scoped.values()]
-    if not dcs:
-        return True
-    return (max(dcs) - min(dcs)) <= DEGENERATE_DC_EPSILON
+_is_degenerate_scope = dc_adapter.is_degenerate_scope
 
 
 def _dwell_percentile_by_var(dc_map_detailed, scope_vars, dwell_by_var, rng=None):
@@ -641,7 +728,8 @@ def reset_dwell_watermark(client_record):
     if not fired_vars:
         return
     eligible = eligible_dwell_seconds_by_var(
-        client_record.get("bias_logs", []), client_record.get("response_list", []))
+        client_record.get("bias_logs", []), client_record.get("response_list", []),
+        client_record.get("app_mode"))
     checked_at = client_record.setdefault("dwell_last_checked_by_var", {})
     for v in fired_vars:
         checked_at[v] = eligible.get(v, 0.0)
@@ -677,13 +765,15 @@ def evaluate_selection_trigger(client_record, selected_ids):
                     "reason": (f"off_schedule (n={n_selected}, next check at "
                                f"{n_selected + SELECTION_RECHECK_PICKS - past})"),
                     "n_selected": n_selected,
-                    "percentile_by_var": None}
+                    "percentile_by_var": None,
+                    "excluded_vars": {}}
         checked = client_record.setdefault("selection_checkpoints_checked", set())
         if n_selected in checked:
             return {"ready": False,
                     "reason": f"already_checked (checkpoint {n_selected} consumed)",
                     "n_selected": n_selected,
-                    "percentile_by_var": None}
+                    "percentile_by_var": None,
+                    "excluded_vars": {}}
         checked.add(n_selected)
 
     return evaluate_selection_progressive_trigger(client_record, selected_ids)
@@ -707,7 +797,7 @@ def evaluate_selection_progressive_trigger(client_record, selected_ids):
 
     Returns a dict. Below readiness / no active variables:
       {"ready": False, "reason": "not_ready (...)" | "no_active_vars",
-       "n_selected", "percentile_by_var": None}
+       "n_selected", "percentile_by_var": None, "excluded_vars": {}}
     At/above readiness with an active variable set:
       {"ready":             True,
        "reason":            "ok",
@@ -715,7 +805,8 @@ def evaluate_selection_progressive_trigger(client_record, selected_ids):
        "target_var":        variable | None,   # the winning variable, only on a fire
        "target_percentile": float | None,      # its percentile, only on a fire
        "n_selected":        int,                # unique selected ids
-       "percentile_by_var": {variable: percentile}}   # full dict, for logging
+       "percentile_by_var": {variable: percentile},   # full dict, for logging
+       "excluded_vars":     {variable: code}}         # dropped before sampling
 
     SCOPE (Shiyao's rule, mirroring the dwell trigger): only the CURRENTLY ACTIVE
     variables are scored -- the x/y axis attributes plus any attribute with an active
@@ -750,7 +841,8 @@ def evaluate_selection_progressive_trigger(client_record, selected_ids):
         return {"ready": False,
                 "reason": f"not_ready ({n_selected} < {MIN_SELECTIONS} selections)",
                 "n_selected": n_selected,
-                "percentile_by_var": None}
+                "percentile_by_var": None,
+                "excluded_vars": {}}
 
     # Resolve the currently-active variables (axes + active filters), the same set the
     # dwell trigger scopes on, via the SAME shared helper. Kept as TWO sets, not just
@@ -763,16 +855,29 @@ def evaluate_selection_progressive_trigger(client_record, selected_ids):
         return {"ready": False,
                 "reason": "no_active_vars",
                 "n_selected": n_selected,
-                "percentile_by_var": None}
+                "percentile_by_var": None,
+                "excluded_vars": {}}
 
     # One fresh seeded generator for this whole evaluation, threaded through
     # selection_percentile_by_var's per-variable loop (it advances this single
     # generator, so each variable draws an independent, non-repeating null while the
     # check stays reproducible). Built ONCE here -- never per variable -- so the
     # variables do not replay an identical null distribution.
+    # Per-variable eligible selections: each active variable is scored ONLY on the
+    # picks made while it was itself active (items 7-8), not on the whole running
+    # selection. Computed once for the check and handed to the scorer, which falls back
+    # to the shared selection for any caller that does not supply one.
+    selected_by_var = eligible_selection_by_var(
+        client_record.get("bias_logs", []), client_record.get("response_list", []),
+        client_record.get("app_mode"))
     percentile_by_var = dc_adapter.selection_percentile_by_var(
         client_record["dc_map_detailed"], selected_ids, variables=active_vars,
-        rng=dc_adapter.live_rng())
+        rng=dc_adapter.live_rng(), selected_by_var=selected_by_var)
+    # Which active variables the scorer dropped as degenerate (a flat, signal-free
+    # scope). They are already out of percentile_by_var, so they cannot be candidates;
+    # this only names them, so a log can tell them from a below-threshold miss.
+    excluded = dc_adapter.degenerate_vars(
+        client_record["dc_map_detailed"], variables=active_vars)
 
     # --- Shiyao's PRIORITY HIERARCHY: THRESHOLD FIRST, then rank -----------------
     # Threshold-then-rank (axis tier > filter tier > confidence > percentile > name),
@@ -790,4 +895,8 @@ def evaluate_selection_progressive_trigger(client_record, selected_ids):
             "target_var": winner,
             "target_percentile": percentile_by_var[winner] if fired else None,
             "n_selected": n_selected,
-            "percentile_by_var": percentile_by_var}
+            "percentile_by_var": percentile_by_var,
+            # Variables dropped before null-sampling (a flat, signal-free scope), kept
+            # distinct from ones that were scored and simply fell short -- the same
+            # marker the dwell trace carries.
+            "excluded_vars": excluded}
