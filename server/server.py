@@ -395,13 +395,44 @@ async def on_task_submitted(sid, data):
 async def on_llm_dismissed(sid, data=None):
     """The realtime panel closed, by timeout or by hand.
 
-    Only the client knows when that happened, so the recheck window can only be
-    restarted from here.
+    Only the client knows when that happened, so both the system-wide display pause and
+    the per-variable recheck window can only be lifted from here. The two are separate
+    mechanisms that happen to share this one trigger: the pause is what stops ANY new
+    intervention while a panel is up, the watermark is what stops the SAME variable
+    re-firing off dwell the participant spent reading it.
     """
     pid = (data or {}).get("participantId")
     client_record = CLIENTS.get(pid)
     if client_record:
+        llm_trigger.release_display_pause(client_record)
         llm_trigger.reset_dwell_watermark(client_record)
+
+
+async def _fire_dwell_intervention(pid, client_record, dwell_metrics, teens, target_var):
+    """Run a fired dwell intervention, and reopen the display pause if it never landed.
+
+    A thin wrapper around llm_intervention.generate_and_emit purely so its "did this
+    actually reach the participant" answer is not thrown away. start_background_task
+    discards a coroutine's return value, so the delivered flag had nowhere to go before.
+
+    Why it matters now: the system-wide gate is no longer a duration that expires on its
+    own -- it stays closed until something clears it. Generation can fail, time out, or
+    find no live socket, in which case NO panel is ever displayed and NO dismiss will
+    ever arrive. Without this release the participant would be silently muted for the
+    rest of the session. This is the failure mode the old 30s wall clock papered over.
+
+    Only the pause is released, never the per-variable watermark: reset_dwell_watermark
+    rebases the fired variable's recheck window against dwell spent READING the panel,
+    and there was no panel to read.
+    """
+    delivered = await llm_intervention.generate_and_emit(
+        SIO, CLIENT_PARTICIPANT_ID_SOCKET_ID_MAPPING, pid,
+        client_record, dwell_metrics, teens, target_var)
+    if not delivered:
+        llm_trigger.release_display_pause(client_record)
+        print(f"[LLM] {pid}: intervention never reached the participant; "
+              f"display pause released", flush=True)
+    return delivered
 
 
 @SIO.event
@@ -505,10 +536,10 @@ async def on_interaction(sid, data):
             teens = bias.DATA_MAP.get(app_mode, {}).get("data", {})
             _dwell = _out["dwell_bias"]
             # One wall-clock instant for this whole evaluation: fed to the system-wide
-            # cooldown gate inside evaluate_trigger AND (on fire) stored as
-            # llm_last_fired_at, so the next fire's cooldown is measured from exactly the
-            # moment we decided -- never two slightly different get_current_time() reads
-            # for what is meant to be the same instant.
+            # display-pause gate inside evaluate_trigger AND (on fire) stamped as
+            # llm_panel_open_since, so the pause opens at exactly the moment we decided
+            # -- never two slightly different get_current_time() reads for what is meant
+            # to be the same instant.
             now_ms = bias_util.get_current_time()
             fired, reason, trace = llm_trigger.evaluate_trigger(client_record, _dwell, now_ms)
             # Persist the FULL trigger trace on every evaluation. Deliberately not
@@ -532,15 +563,19 @@ async def on_interaction(sid, data):
                 "total_dwell_seconds": trace["total_dwell_seconds"],
             }])
             if fired:
-                client_record["llm_last_fired_at"] = now_ms
+                # Close the system-wide gate HERE, at the decision, not when the panel
+                # is emitted ~5s later: those 5s are still hovers, still evaluations,
+                # and an emit-time pause would let a second intervention start
+                # underneath the one being written. It reopens on dismiss, or below if
+                # this generation never reaches the participant.
+                llm_trigger.open_display_pause(client_record, now_ms)
                 LLM_LAST_SKIP.pop(pid, None)
                 print(f"[LLM] {pid}: triggered on {trace['target_var']} "
                       f"(pct={trace['target_percentile']}, "
                       f"n_dwelled={_dwell.get('n_dwelled')})", flush=True)
                 SIO.start_background_task(
-                    llm_intervention.generate_and_emit,
-                    SIO, CLIENT_PARTICIPANT_ID_SOCKET_ID_MAPPING, pid,
-                    client_record, _dwell, teens, trace["target_var"])
+                    _fire_dwell_intervention, pid, client_record, _dwell, teens,
+                    trace["target_var"])
             else:
                 # Log only when the blocking gate CHANGES, so exploring shows
                 # why nothing fired without a line on every interaction.

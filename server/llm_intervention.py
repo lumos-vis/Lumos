@@ -825,9 +825,16 @@ async def generate_and_emit(sio, sid_by_pid, pid, client_record, dwell_metrics, 
     Emits an "llm_intervention" event carrying the generated object with each
     theme's variable / diagnosis_filter attached (see _generate_and_emit) -- the
     shape the frontend panel already consumes.
+
+    Returns whether it DELIVERED, same as the selection sibling. The realtime caller used
+    to discard this; it no longer can. The system-wide gate is a display-linked pause
+    that only reopens when a panel goes away, so a generation that failed, timed out, or
+    found no live socket has to say so -- otherwise no panel exists, no dismiss ever
+    arrives, and the participant is muted for the rest of the session (server.py
+    _fire_dwell_intervention).
     """
     dwell = dc_metric.dwell_by_teen(client_record.get("bias_logs", []))
-    await _generate_and_emit(
+    return await _generate_and_emit(
         sio, sid_by_pid, pid, client_record, teens,
         weights=dwell,
         attention={"dwell": dwell},
@@ -1021,6 +1028,14 @@ async def _generate_and_emit(sio, sid_by_pid, pid, client_record, teens,
         if room is not None:
             await sio.emit(event, result, room=room)
             delivered = True
+            # ANALYSIS ONLY -- read by no gate. llm_trigger's display pause opens at the
+            # FIRE DECISION (llm_panel_open_since), which is the right thing for the
+            # gate but means that timestamp includes the generation. This one marks when
+            # the panel actually went out, so the two together give both the generation
+            # latency and, against the dismiss, the real display duration. Stamped on
+            # the shared core, so a selection panel records it too; nothing branches on
+            # it either way.
+            client_record["llm_panel_shown_at"] = _now()
         else:
             print(f"[LLM] {pid}: {event} not delivered (no live socket)", flush=True)
 

@@ -58,9 +58,30 @@ import llm_intervention
 MIN_ELIGIBLE_DWELL_SECONDS = 20.0  # a variable's OWN eligible dwell before its first check
 DWELL_PERCENTILE_THRESHOLD = 0.80  # fire when DwellBias is at/above this percentile
 DWELL_RECHECK_SECONDS = 10.0       # min NEW ELIGIBLE dwell for the SAME variable between checks
-SYSTEM_FIRE_COOLDOWN_MS = 30_000   # min REAL (wall-clock) time between any two fired
-                                   # interventions, layered on top of the per-variable
-                                   # recheck spacing above (Shiyao's system-wide cooldown)
+
+# The system-wide gate is a DISPLAY-LINKED PAUSE, not a duration: CLOSED from the moment
+# a fire is decided, and open again only once the participant's panel has actually gone
+# away (on_llm_dismissed -> release_display_pause). It replaces a fixed 30s wall clock,
+# per Shiyao -- "paused while the panel is visible, resumes when it disappears". A
+# participant who reads a nudge for 8s and closes it should not then sit through 22s of
+# nothing; one who leaves it up should not have the clock run out underneath it.
+#
+# It opens at the FIRE DECISION rather than at the emit, deliberately: the ~5s generation
+# happens before any panel exists, so a gate that only closed on display would let a
+# second fire start during it -- two generations, two panels, the first replaced before
+# it could be read.
+#
+# PANEL_FLAG_WATCHDOG_MS is a BACKSTOP, not a policy value. The clear is client-
+# originated, so it is not guaranteed to arrive: a refresh mid-panel, a socket that drops
+# before the dismiss flushes, or a generation that dies past the point the caller can
+# react all leave the flag set with no panel behind it. The old fixed duration healed
+# those by expiring; nothing else does, so a flag older than this bound is cleared at the
+# gate rather than obeyed. Sized to be unreachable legitimately: 30s of panel display
+# (the frontend's own LLM_PANEL_TIMEOUT_MS auto-dismiss) + 20s of generation
+# (llm_intervention.GENERATION_TIMEOUT_SECONDS) = 50s worst case, rounded generously to
+# two minutes. Erring long only delays recovery from a fault; erring short would reopen
+# the gate under a panel still being read, which is the behaviour this replaced.
+PANEL_FLAG_WATCHDOG_MS = 120_000
 
 # The degenerate-scope guard now lives in dc_adapter, because BOTH this module's dwell
 # scorer and dc_adapter's own selection scorer need it and dc_adapter cannot import
@@ -399,7 +420,7 @@ def evaluate_trigger(client_record, dwell_metrics, now_ms=None):
     Returns (fired, reason, trace):
       * fired  -- bool.
       * reason -- a short code so a server log makes it obvious which condition
-        blocked it: "ok" | "no_dwell_bias" | "not_ready (...)" | "system_cooldown (...)" |
+        blocked it: "ok" | "no_dwell_bias" | "not_ready (...)" | "panel_displayed (...)" |
         "too_soon (...)" | "no_visible_axes" | "no_belief_vars (...)" |
         "degenerate_null (...)" | "below_percentile (...)".
       * trace  -- {"percentile_by_var", "target_var", "target_percentile",
@@ -417,8 +438,8 @@ def evaluate_trigger(client_record, dwell_metrics, now_ms=None):
 
     Policy: readiness, recheck spacing AND scoring are ALL PER VARIABLE, run on each
     variable's OWN eligible dwell (eligible_dwell_by_teen_by_var -- hovers that happened
-    while that variable was active). First a SYSTEM-WIDE wall-clock cooldown (>=
-    SYSTEM_FIRE_COOLDOWN_MS of REAL time since the last fire); then, among the currently-
+    while that variable was active). First the SYSTEM-WIDE DISPLAY PAUSE (nothing fires
+    while an intervention is still on the participant's screen); then, among the currently-
     active variables, a variable is checkable this call once it has (a) >= MIN_ELIGIBLE_
     DWELL_SECONDS of its own eligible dwell -- the first-check readiness floor -- AND (b)
     >= DWELL_RECHECK_SECONDS of NEW eligible dwell since its OWN last check. A variable
@@ -436,14 +457,23 @@ def evaluate_trigger(client_record, dwell_metrics, now_ms=None):
     gated: a high enough percentile fires even when DwellBias is negative (the
     positive-score requirement was removed in pilot round 2).
 
-    System cooldown vs per-variable spacing: these are two DIFFERENT clocks, layered.
+    Display pause vs per-variable spacing: these are two DIFFERENT mechanisms, layered.
     The per-variable gate below counts ACCUMULATED ELIGIBLE DWELL (only advances while
-    hovering with that variable active); this system gate counts REAL elapsed time
-    (now_ms - llm_last_fired_at), so it also covers the participant reading the panel.
+    hovering with that variable active); the system gate is not a clock at all -- it is
+    simply CLOSED for as long as a panel is believed to be up (llm_panel_open_since set).
     It is placed BEFORE any scoping/scoring so a suppressed check does no work and --
     critically -- mutates NO cooldown state: dwell_last_checked_by_var and
     dwell_last_fired_vars are left exactly as if scoring never ran, so nothing "earns"
-    toward the next fire while cooling.
+    toward the next fire while a panel is displayed.
+
+    KNOWN, ACCEPTED CONSEQUENCE of dropping the wall clock: on a manual early close, the
+    per-variable spacing is now the only thing separating two interventions. The variable
+    that fired was rebased by reset_dwell_watermark and so still owes DWELL_RECHECK_
+    SECONDS of new eligible dwell -- but a variable that was SCORED AND LOST keeps its
+    recheck budget by design (see below), so if it was already eligible before the
+    dismiss it can fire immediately, with no wall-clock gap. The old 30s floor concealed
+    that. This is the behaviour Shiyao asked for, not an oversight: the pause is meant to
+    track the panel, and once the panel is gone there is nothing left to wait for.
 
     Side effect -- dwell_last_checked_by_var[v], in v's OWN eligible-seconds units.
     Confirmed with Shiyao, and asymmetric between the two outcomes:
@@ -456,17 +486,19 @@ def evaluate_trigger(client_record, dwell_metrics, now_ms=None):
         non-winners. Variables excluded before sampling (the degenerate guard) are NOT
         advanced -- nothing about them was meaningfully evaluated.
     A call blocked by an earlier gate mutates nothing at all. On fire, the caller
-    (on_interaction) refreshes llm_last_fired_at and pins the intervention's message to
-    trace["target_var"].
+    (on_interaction) opens the display pause (open_display_pause) and pins the
+    intervention's message to trace["target_var"].
 
     client_record: the CLIENTS[pid] dict (reads bias_logs / response_list /
-                   dc_map_detailed / dwell_last_checked_by_var / llm_last_fired_at).
+                   dc_map_detailed / dwell_last_checked_by_var / llm_panel_open_since).
     dwell_metrics: the dict from dc_adapter.compute_dwell_metrics, i.e.
                    {"dwell_bias", "dwell_bias_v", "n_dwelled"}.
     now_ms:        current wall-clock time in epoch ms (bias_util.get_current_time()'s
                    unit), passed in by the caller so this module imports no clock and
-                   its tests stay deterministic. None (no clock supplied) skips the
-                   system-cooldown gate entirely -- the live path always passes it.
+                   its tests stay deterministic. The display pause itself needs no clock
+                   -- an open pause suppresses either way -- but its stale-flag watchdog
+                   does, so None (no clock supplied) can only suppress, never recover.
+                   The live path always passes it.
     """
     bias_logs = client_record.get("bias_logs", [])
     # total_dwell_seconds / n_dwelled are the GLOBAL pooled figures, kept for the
@@ -487,19 +519,28 @@ def evaluate_trigger(client_record, dwell_metrics, now_ms=None):
     if observed is None:
         return False, "no_dwell_bias", trace
 
-    # --- SYSTEM-WIDE wall-clock cooldown: no two fires within SYSTEM_FIRE_COOLDOWN_MS
-    # of REAL time. Placed here (before ANY scoping/scoring) so a suppressed check does
-    # no work and touches NO cooldown state -- dwell_last_checked_by_var /
-    # dwell_last_fired_vars stay exactly as if scoring never ran. Skipped when no clock
-    # is supplied (now_ms is None) or there has been no fire yet this session. The
-    # boundary matches the per-variable ">= is ready": elapsed < cooldown suppresses,
-    # so at EXACTLY SYSTEM_FIRE_COOLDOWN_MS it is allowed through.
-    last_fired = client_record.get("llm_last_fired_at")
-    if now_ms is not None and last_fired is not None:
-        elapsed_ms = now_ms - last_fired
-        if elapsed_ms < SYSTEM_FIRE_COOLDOWN_MS:
-            return False, (f"system_cooldown ({elapsed_ms / 1000.0:.1f}s < "
-                           f"{SYSTEM_FIRE_COOLDOWN_MS / 1000.0:.0f}s since last fire)"), trace
+    # --- SYSTEM-WIDE DISPLAY PAUSE: nothing new fires while an intervention is still
+    # in front of the participant. Open/closed, not timed -- the flag is set at the fire
+    # decision and cleared when the panel actually goes away (or when the generation
+    # behind it never delivered). Placed here (before ANY scoping/scoring) so a
+    # suppressed check does no work and touches NO cooldown state --
+    # dwell_last_checked_by_var / dwell_last_fired_vars stay exactly as if scoring never
+    # ran. Absent flag (no fire yet this session, or already dismissed) = gate open.
+    panel_open_since = client_record.get("llm_panel_open_since")
+    if panel_open_since is not None:
+        open_for_ms = None if now_ms is None else now_ms - panel_open_since
+        if open_for_ms is not None and open_for_ms >= PANEL_FLAG_WATCHDOG_MS:
+            # Stale beyond anything a real panel can survive: the dismiss is client-
+            # originated and can simply never arrive (refresh, dropped socket). Clear
+            # and fall through rather than suppress -- obeying it would mute this
+            # participant for the rest of the session. This is the ONE mutation a
+            # gate-suppressed path is allowed, and it is of the flag itself, never of
+            # any per-variable cooldown state.
+            release_display_pause(client_record)
+        else:
+            note = ("no clock" if open_for_ms is None
+                    else f"{open_for_ms / 1000.0:.1f}s")
+            return False, f"panel_displayed ({note} since the intervention fired)", trace
 
     # --- resolve the CURRENTLY ACTIVE variables ONCE: the x/y axis attributes PLUS
     # any attribute with an active filter (Shiyao's request). This governs which
@@ -703,6 +744,48 @@ def should_trigger(client_record, dwell_metrics, now_ms=None):
     """
     fired, _reason, _trace = evaluate_trigger(client_record, dwell_metrics, now_ms)
     return fired
+
+
+def open_display_pause(client_record, now_ms):
+    """Close the system-wide gate: an intervention has just been decided on.
+
+    Called by on_interaction at the FIRE DECISION -- before the ~5s generation starts,
+    not when the panel is emitted -- so the generation window is covered too. Without
+    that, several more hovers (and so several more evaluate_trigger calls) run while the
+    first intervention is still being written, and a second one starts underneath it.
+
+    now_ms is the SAME instant the firing evaluate_trigger was given, passed by the
+    caller rather than read here, so the decision and the pause it opens can never be
+    two slightly different clock reads.
+
+    Paired with release_display_pause. The key is owned by this module because the gate
+    in evaluate_trigger is its only reader; server.py just calls these.
+    """
+    client_record["llm_panel_open_since"] = now_ms
+
+
+def release_display_pause(client_record):
+    """Reopen the system-wide gate: there is no longer a panel in front of the participant.
+
+    Three callers, and they are not interchangeable:
+      * server.py on_llm_dismissed -- the normal path. The panel timed out
+        (LLM_PANEL_TIMEOUT_MS) or was closed by hand; both routes go through the
+        frontend's dismissLlmPanel, so both arrive here.
+      * server.py _fire_dwell_intervention, when generate_and_emit reports the
+        intervention was NOT delivered -- generation failed, timed out, or the
+        participant had no live socket. No panel ever appeared, so no dismiss will ever
+        arrive to clear this; without the release the participant would be muted for the
+        rest of the session.
+      * evaluate_trigger's own watchdog above, for a flag that outlived any plausible
+        panel because the dismiss was lost in transit rather than never sent.
+
+    Idempotent by design -- pop, not del -- so a duplicate dismiss, or a release racing
+    the watchdog, is a no-op rather than a KeyError. Touches ONLY this flag: the
+    per-variable recheck watermarks are reset_dwell_watermark's business, and the two
+    are deliberately independent (a dismiss does both, a failed delivery does only this,
+    since nothing was ever displayed to rebase against).
+    """
+    client_record.pop("llm_panel_open_since", None)
 
 
 def reset_dwell_watermark(client_record):

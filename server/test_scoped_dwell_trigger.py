@@ -594,86 +594,144 @@ def main():
           and tNO["percentile_by_var"] is None)
 
     # ===================================================================== #
-    # SYSTEM-WIDE wall-clock cooldown: no two fires within SYSTEM_FIRE_COOLDOWN_MS of
-    # REAL time, layered ON TOP OF the per-variable recheck spacing. now_ms is passed
-    # explicitly for determinism (no sleeping, no mocking the clock).
+    # SYSTEM-WIDE DISPLAY PAUSE: nothing new fires while an intervention is still on
+    # the participant's screen. This replaced a fixed 30s wall-clock cooldown, so the
+    # question is no longer "how much time has passed" but "is the panel still up" --
+    # an open/closed state, opened at the fire decision and closed on dismiss. The old
+    # boundary tests (29.999s / 30.000s / 30.001s) tested arithmetic that no longer
+    # exists; these test the state machine, including the two ways it can be left set
+    # with no panel behind it.
     # ===================================================================== #
-    print("\nsystem-wide wall-clock cooldown (30s real time between fires):")
-    SYS = llm_trigger.SYSTEM_FIRE_COOLDOWN_MS   # 30_000 ms
-    T0 = 1_000_000                              # an arbitrary epoch-ms "now"
+    print("\nsystem-wide display pause (closed while a panel is displayed):")
+    WATCHDOG = llm_trigger.PANEL_FLAG_WATCHDOG_MS   # 120_000 ms
+    T0 = 1_000_000                                  # an arbitrary epoch-ms "now"
 
-    def fireable(last_fired=None, checked=None):
+    def fireable(open_since=None, checked=None):
         """A record that WOULD fire on Map A (both a/b are pop MAX, 30s dwell), with an
-        optional prior-fire wall-clock and optional per-variable clocks."""
+        optional open display pause and optional per-variable clocks."""
         logs = hot_dwell("var_a", "var_b")      # 30s, axes var_a/var_b
         rec = {"bias_logs": logs, "dc_map_detailed": mapA}
-        if last_fired is not None:
-            rec["llm_last_fired_at"] = last_fired
+        if open_since is not None:
+            rec["llm_panel_open_since"] = open_since
         if checked is not None:
             rec["dwell_last_checked_by_var"] = dict(checked)
         return rec, dc_adapter.compute_dwell_metrics(mapA, logs)
 
-    # --- first call fires (no prior fire) -> the caller records llm_last_fired_at -----
+    # --- first call fires (no panel up) -> the caller opens the pause ----------------
     recS, mS = fireable()
     fS1, rS1, _ = llm_trigger.evaluate_trigger(recS, mS, T0)
-    check("first call fires (no llm_last_fired_at yet -> system gate not applied)",
+    check("first call fires (no llm_panel_open_since yet -> gate open)",
           fS1 is True and rS1 == "ok")
-    recS["llm_last_fired_at"] = T0                       # mirrors server.py on fire
+    llm_trigger.open_display_pause(recS, T0)             # mirrors server.py on fire
+    check("open_display_pause stamps the fire instant it was given",
+          recS["llm_panel_open_since"] == T0)
     checked_after_fire = dict(recS["dwell_last_checked_by_var"])
     fired_vars_after_fire = list(recS["dwell_last_fired_vars"])
 
-    # --- a second call 10s later (< 30s) -> suppressed, and NO state mutated ----------
+    # --- while the panel is up -> suppressed, and NO state mutated -------------------
     fS2, rS2, trS2 = llm_trigger.evaluate_trigger(recS, mS, T0 + 10_000)
-    print(f"    fired at T0, re-checked +10s -> fired={fS2} reason={rS2!r}")
-    check("within 30s of the last fire -> suppressed, reason 'system_cooldown'",
-          fS2 is False and rS2.startswith("system_cooldown"))
-    check("suppressed system-cooldown call did NOT advance dwell_last_checked_by_var",
+    print(f"    fired at T0, re-checked +10s with the panel still up -> "
+          f"fired={fS2} reason={rS2!r}")
+    check("panel still displayed -> suppressed, reason 'panel_displayed'",
+          fS2 is False and rS2.startswith("panel_displayed"))
+    check("suppressed display-pause call did NOT advance dwell_last_checked_by_var",
           recS["dwell_last_checked_by_var"] == checked_after_fire)
-    check("suppressed system-cooldown call did NOT change dwell_last_fired_vars",
+    check("suppressed display-pause call did NOT change dwell_last_fired_vars",
           recS["dwell_last_fired_vars"] == fired_vars_after_fire)
     check("suppressed call still returns the trace shape (nothing scored, gate "
           "stopped short)",
           trS2["percentile_by_var"] is None and trS2["target_var"] is None)
 
-    # --- boundary: just under 30s suppresses; EXACTLY 30s and just past fire ----------
-    # Fresh records with a prior fire but NO per-variable clocks, so ONLY the system
-    # gate is in question. Boundary matches DWELL_RECHECK's ">= is ready": elapsed <
-    # cooldown suppresses, so exactly SYSTEM_FIRE_COOLDOWN_MS is allowed through.
-    recU, mU = fireable(last_fired=T0)
-    fU, rU, _ = llm_trigger.evaluate_trigger(recU, mU, T0 + SYS - 1)   # 29.999s
-    check("just under 30s (29999ms) -> suppressed",
-          fU is False and rU.startswith("system_cooldown"))
-    recE, mE = fireable(last_fired=T0)
-    fE, rE, _ = llm_trigger.evaluate_trigger(recE, mE, T0 + SYS)       # exactly 30.000s
-    check("exactly 30s (boundary inclusive, matches DWELL_RECHECK's >=) -> fires",
-          fE is True and rE == "ok")
-    recP, mP = fireable(last_fired=T0)
-    fP, rP, _ = llm_trigger.evaluate_trigger(recP, mP, T0 + SYS + 1)   # 30.001s
-    check("just past 30s -> fires",
-          fP is True and rP == "ok")
+    # --- NO expiry: elapsed time alone never reopens the gate ------------------------
+    # The whole point of the redesign. Under the old 30s cooldown the third and fourth
+    # of these would have fired; a panel left up is a panel left up.
+    for elapsed in (1, 10_000, 30_000, 60_000, WATCHDOG - 1):
+        recW, mW = fireable(open_since=T0)
+        fW, rW, _ = llm_trigger.evaluate_trigger(recW, mW, T0 + elapsed)
+        check(f"panel open for {elapsed / 1000.0:.3f}s -> still suppressed "
+              f"(no duration reopens it)",
+              fW is False and rW.startswith("panel_displayed"))
 
-    # --- now_ms supplied but NO prior fire -> gate not applied ------------------------
-    recN, mN = fireable()                                # no llm_last_fired_at key
-    fN, rN, _ = llm_trigger.evaluate_trigger(recN, mN, T0 + 5_000)
-    check("now_ms present but no prior fire this session -> not gated, fires",
-          fN is True and rN == "ok")
+    # --- dismiss clears it, and the very next check may fire immediately -------------
+    # No wall-clock gap: once the panel is gone there is nothing left to wait for. This
+    # is the accepted tradeoff of dropping the fixed cooldown, tested rather than left
+    # implicit -- see the KNOWN CONSEQUENCE note in evaluate_trigger's docstring.
+    recD, mD = fireable(open_since=T0)
+    llm_trigger.release_display_pause(recD)
+    check("release_display_pause removes the flag entirely (absent, not None)",
+          "llm_panel_open_since" not in recD)
+    fD, rD, _ = llm_trigger.evaluate_trigger(recD, mD, T0 + 1)
+    check("dismissed 1ms later -> the immediately following check fires (the gate "
+          "tracks the panel, not a clock)",
+          fD is True and rD == "ok")
+    llm_trigger.release_display_pause(recD)      # idempotent: no KeyError on a repeat
+    check("release_display_pause is idempotent (a duplicate dismiss is a no-op)",
+          "llm_panel_open_since" not in recD)
+
+    # --- NON-DELIVERY: generation produced nothing, so no dismiss will ever arrive ----
+    # server.py's _fire_dwell_intervention calls exactly this on a falsy delivered flag.
+    # Without it the participant is muted for the whole session -- the failure mode the
+    # old self-expiring cooldown concealed.
+    recX, mX = fireable(open_since=T0)
+    fX0, rX0, _ = llm_trigger.evaluate_trigger(recX, mX, T0 + 5_000)
+    check("setup: undelivered intervention leaves the pause closed",
+          fX0 is False and rX0.startswith("panel_displayed"))
+    llm_trigger.release_display_pause(recX)      # what the non-delivery path does
+    fX1, rX1, _ = llm_trigger.evaluate_trigger(recX, mX, T0 + 5_001)
+    check("releasing on non-delivery reopens the gate (no permanent lockout)",
+          fX1 is True and rX1 == "ok")
+
+    # --- WATCHDOG: a flag older than any real panel is cleared, not obeyed ------------
+    # The dismiss is client-originated and can simply never arrive (refresh mid-panel,
+    # socket dropped before the emit flushed). Sized well past 30s of display + 20s of
+    # generation, so reaching it means the clear was lost, never that a panel is slow.
+    recV, mV = fireable(open_since=T0, checked={"var_a": 25.0})   # var_a cooling
+    fV, rV, _ = llm_trigger.evaluate_trigger(recV, mV, T0 + WATCHDOG)
+    print(f"    flag {WATCHDOG / 1000.0:.0f}s old -> fired={fV} reason={rV!r}")
+    check("at exactly PANEL_FLAG_WATCHDOG_MS the stale flag is cleared and the call "
+          "falls through to scoring",
+          fV is True and rV == "ok")
+    check("the watchdog CLEARS the flag rather than leaving it to re-suppress",
+          "llm_panel_open_since" not in recV)
+    check("the cleared call scores normally -- per-variable spacing still governs "
+          "WHICH var (var_a cooling -> var_b)",
+          recV["dwell_last_fired_vars"] == ["var_b"])
+    recV2, mV2 = fireable(open_since=T0)
+    fV2, rV2, _ = llm_trigger.evaluate_trigger(recV2, mV2, T0 + WATCHDOG + 60_000)
+    check("well past the watchdog -> also cleared and fires",
+          fV2 is True and rV2 == "ok")
+
+    # --- no clock supplied: an open pause still suppresses, but cannot self-heal ------
+    # The presence check needs no clock; only the watchdog does. Suppressing is the safe
+    # direction -- the live path always passes now_ms, so this cannot strand anyone.
+    recC, mC = fireable(open_since=T0)
+    fC, rC, _ = llm_trigger.evaluate_trigger(recC, mC)          # now_ms omitted
+    check("no clock + open pause -> still suppressed (presence check needs no clock)",
+          fC is False and rC.startswith("panel_displayed"))
+    check("the flag survives a clockless call (the watchdog had nothing to measure)",
+          recC["llm_panel_open_since"] == T0)
+    recC2, mC2 = fireable()
+    fC2, rC2, _ = llm_trigger.evaluate_trigger(recC2, mC2)      # no clock, no flag
+    check("no clock + no pause -> gate open, fires (unchanged from before)",
+          fC2 is True and rC2 == "ok")
 
     # --- LAYERED on top of per-variable spacing: a var whose OWN clock is ready is
-    # still suppressed while the system gate cools, and its clock is left untouched -----
-    recL, mL = fireable(last_fired=T0, checked={"var_a": 25.0})  # var_a cooling; var_b ready
+    # still suppressed while a panel is displayed, and its clock is left untouched ------
+    recL, mL = fireable(open_since=T0, checked={"var_a": 25.0})  # var_a cooling; var_b ready
     checked_before = dict(recL["dwell_last_checked_by_var"])
-    fL, rL, trL = llm_trigger.evaluate_trigger(recL, mL, T0 + 10_000)   # system still cooling
-    print(f"    var_b per-var-ready but system cooling +10s -> fired={fL} reason={rL!r}")
-    check("per-variable clock says var_b is ready, but the SYSTEM gate is cooling "
+    fL, rL, trL = llm_trigger.evaluate_trigger(recL, mL, T0 + 10_000)   # panel still up
+    print(f"    var_b per-var-ready but a panel is displayed -> fired={fL} reason={rL!r}")
+    check("per-variable clock says var_b is ready, but a panel is DISPLAYED "
           "-> suppressed (layered on top of, not replaced by, per-variable spacing)",
-          fL is False and rL.startswith("system_cooldown"))
-    check("system-suppressed call left the per-variable clocks untouched (var_b NOT advanced)",
+          fL is False and rL.startswith("panel_displayed"))
+    check("display-suppressed call left the per-variable clocks untouched (var_b NOT advanced)",
           recL["dwell_last_checked_by_var"] == checked_before
           and "dwell_last_fired_vars" not in recL)
-    # Contrast: once 30s of REAL time passes, the SAME record fires -- the per-variable
+    # Contrast: once the panel is dismissed the SAME record fires -- the per-variable
     # spacing still governs WHICH var is checked (var_a cooling -> scope {var_b}).
-    fL2, rL2, _ = llm_trigger.evaluate_trigger(recL, mL, T0 + SYS)
-    check("after 30s the system gate clears -> fires, per-variable spacing still governs "
+    llm_trigger.release_display_pause(recL)
+    fL2, rL2, _ = llm_trigger.evaluate_trigger(recL, mL, T0 + 10_001)
+    check("after dismiss the gate opens -> fires, per-variable spacing still governs "
           "(checks var_b only, records it)",
           fL2 is True and rL2 == "ok" and recL["dwell_last_fired_vars"] == ["var_b"])
 
@@ -910,7 +968,7 @@ def main():
     orig_core = llm_intervention._generate_and_emit
     llm_intervention._generate_and_emit = fake_core
     try:
-        asyncio.run(llm_intervention.generate_and_emit(
+        returned = asyncio.run(llm_intervention.generate_and_emit(
             "SIO", "SIDMAP", "pid1", recT2, dwell_metrics_stub, {"t0": {}}, "var_a"))
     finally:
         llm_intervention._generate_and_emit = orig_core
@@ -928,6 +986,58 @@ def main():
           and captured["attention"] == {"dwell": dc_metric.dwell_by_teen(logsT2)}
           and captured["phase"] == "realtime"
           and captured["event"] == "llm_intervention")
+
+    # --- the DELIVERED flag now propagates out of the realtime path ------------------
+    # It used to be awaited and dropped. server.py's _fire_dwell_intervention reads it to
+    # decide whether to release the display pause, so a swallowed False here is a
+    # participant muted for the rest of the session, not just a missing log line.
+    check("generate_and_emit RETURNS the delivered flag (it used to discard it)",
+          returned is True)
+
+    async def fake_core_undelivered(*a, **kw):
+        return False
+
+    llm_intervention._generate_and_emit = fake_core_undelivered
+    try:
+        undelivered = asyncio.run(llm_intervention.generate_and_emit(
+            "SIO", "SIDMAP", "pid1", recT2, dwell_metrics_stub, {"t0": {}}, "var_a"))
+    finally:
+        llm_intervention._generate_and_emit = orig_core
+    check("a generation that delivered nothing returns False (what the pause release "
+          "keys off)",
+          undelivered is False)
+
+    # --- END TO END: server.py's wrapper is what connects those two halves -----------
+    # A False return and a release that reopens the gate are each only useful if
+    # something actually joins them, and that wiring lives in server.py. This suite
+    # otherwise stays off that module (it pulls in aiohttp/socketio/pandas), so the
+    # check is guarded rather than made a hard dependency of a pure-logic suite.
+    try:
+        import server as _server
+    except Exception as e:                                  # pragma: no cover
+        print(f"    (skipped: server.py not importable here -- {type(e).__name__})")
+    else:
+        recW1 = {"llm_panel_open_since": 1_000_000}
+        llm_intervention._generate_and_emit = fake_core                 # delivers
+        try:
+            asyncio.run(_server._fire_dwell_intervention(
+                "pid1", recW1, dwell_metrics_stub, {"t0": {}}, "var_a"))
+        finally:
+            llm_intervention._generate_and_emit = orig_core
+        check("delivered -> the wrapper LEAVES the pause closed (a panel is up, and "
+              "only a dismiss should reopen it)",
+              recW1.get("llm_panel_open_since") == 1_000_000)
+
+        recW2 = {"llm_panel_open_since": 1_000_000}
+        llm_intervention._generate_and_emit = fake_core_undelivered     # delivers nothing
+        try:
+            asyncio.run(_server._fire_dwell_intervention(
+                "pid1", recW2, dwell_metrics_stub, {"t0": {}}, "var_a"))
+        finally:
+            llm_intervention._generate_and_emit = orig_core
+        check("NOT delivered -> the wrapper releases the pause, so no panel and no "
+              "dismiss cannot mute the participant for the session",
+              "llm_panel_open_since" not in recW2)
 
     print("\n" + "=" * 72)
     print(f"{'ALL CHECKS PASSED' if failures == 0 else str(failures) + ' CHECK(S) FAILED'}")
