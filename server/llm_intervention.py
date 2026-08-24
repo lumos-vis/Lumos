@@ -693,7 +693,8 @@ def live_room(sio, sid_by_pid, pid):
     return sid
 
 
-async def generate_and_emit(sio, sid_by_pid, pid, client_record, dwell_metrics, teens):
+async def generate_and_emit(sio, sid_by_pid, pid, client_record, dwell_metrics, teens,
+                            target_var):
     """Background task: assemble -> generate -> emit the realtime intervention.
 
     Fired via SIO.start_background_task from on_interaction AFTER the interaction
@@ -703,6 +704,16 @@ async def generate_and_emit(sio, sid_by_pid, pid, client_record, dwell_metrics, 
     Takes the pid -> sid map rather than a sid: a reconnect during those seconds
     gives the participant a NEW sid, and emitting to the old room silently
     delivers nothing. live_room resolves it and rejects a stale one.
+
+    target_var is the variable the dwell trigger's priority hierarchy fired on. It is
+    passed as force_variable, a HARD override pinning the whole intervention -- cell grid
+    and message text alike -- to that variable, exactly as generate_selection_and_emit
+    does with its own winner. This REPLACES top_variable's independent ranking on this
+    path: the trigger now scores each variable separately and already knows which one it
+    fired on, so letting the assembly re-rank dwell_bias_v could name a DIFFERENT
+    variable than the one that actually crossed the threshold. axes is therefore None
+    here too -- force_variable fully replaces that soft top-3 steer. target_var is
+    expected non-None (the caller only runs this on a fire).
 
     Emits an "llm_intervention" event carrying the generated object with each
     theme's variable / diagnosis_filter attached (see _generate_and_emit) -- the
@@ -717,7 +728,9 @@ async def generate_and_emit(sio, sid_by_pid, pid, client_record, dwell_metrics, 
         phase="realtime",
         trigger_signal="point-level dwell bias exceeded participant-specific threshold",
         event="llm_intervention",
-        axes=get_current_axes(client_record))
+        # Hard-pin the message to the fired variable (not the soft axis steer).
+        axes=None,
+        force_variable=target_var)
 
 
 async def generate_selection_and_emit(sio, sid_by_pid, pid, client_record,

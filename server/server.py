@@ -520,19 +520,27 @@ async def on_interaction(sid, data):
                 "created_at": now_ms,
                 "fired": fired,
                 "reason": reason,
-                "dwell_bias_percentile": trace["dwell_bias_percentile"],
+                # Per-variable shape, matching the selection_trigger record below: the
+                # winner plus the FULL breakdown, since dwell is no longer one pooled
+                # score. excluded_vars marks variables dropped before null-sampling
+                # (degenerate) so analysis can tell that from a below-threshold miss.
+                "target_var": trace["target_var"],
+                "target_percentile": trace["target_percentile"],
+                "percentile_by_var": trace["percentile_by_var"],
+                "excluded_vars": trace["excluded_vars"],
                 "n_dwelled": trace["n_dwelled"],
                 "total_dwell_seconds": trace["total_dwell_seconds"],
             }])
             if fired:
                 client_record["llm_last_fired_at"] = now_ms
                 LLM_LAST_SKIP.pop(pid, None)
-                print(f"[LLM] {pid}: triggered (dwell_bias={_dwell.get('dwell_bias'):+.4f}, "
+                print(f"[LLM] {pid}: triggered on {trace['target_var']} "
+                      f"(pct={trace['target_percentile']}, "
                       f"n_dwelled={_dwell.get('n_dwelled')})", flush=True)
                 SIO.start_background_task(
                     llm_intervention.generate_and_emit,
                     SIO, CLIENT_PARTICIPANT_ID_SOCKET_ID_MAPPING, pid,
-                    client_record, _dwell, teens)
+                    client_record, _dwell, teens, trace["target_var"])
             else:
                 # Log only when the blocking gate CHANGES, so exploring shows
                 # why nothing fired without a line on every interaction.
