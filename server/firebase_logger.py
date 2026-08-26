@@ -14,9 +14,68 @@ Firestore structure:
 
 import json
 import os
+import traceback  # TEMPORARY DIAGNOSTIC -- see _diag_traceback below
 import numpy as np
 
 _db = None  # module-level Firestore client; None = not initialised
+
+
+# --------------------------------------------------------------------------- #
+# TEMPORARY DIAGNOSTIC INSTRUMENTATION (branch: firebase-logging-fix)
+#
+# Added to chase the production "400 Invalid database id %28default%29" failures,
+# which reproduce on neither the pinned nor the latest firebase-admin /
+# google-cloud-firestore combination, and which the committed code has no path to
+# produce -- firestore.client() is called with no arguments and nothing here builds
+# a database path. So the question these two helpers answer is: what database id
+# does the live client ACTUALLY resolve to, and which frame constructed it.
+#
+# PURELY ADDITIVE. No existing line is modified, no behaviour, retry or control
+# flow changes, and every call site below is a bare extra print. Both helpers
+# swallow their own exceptions, so diagnostic code can never become the reason a
+# Firestore call (or client init) fails.
+#
+# REMOVE AFTER ONE DIAGNOSTIC RUN: delete this block, the `import traceback`
+# above, and the nine `_diag_traceback(...)` / one `_diag_client_identity(...)`
+# call lines. Nothing else references them.
+# --------------------------------------------------------------------------- #
+def _diag_traceback(where):
+    """Print the full traceback of the exception currently being handled.
+
+    Called from inside an `except` block, immediately AFTER the existing one-line
+    error print -- which is left exactly as it was, so anything grepping the Render
+    logs for "[firebase_logger] save_priors error:" still matches.
+    """
+    try:
+        print(f"[firebase_logger] DIAG traceback for {where}:\n"
+              f"{traceback.format_exc()}", flush=True)
+    except Exception:
+        pass
+
+
+def _diag_client_identity(db):
+    """Print the project / database the constructed client actually resolved to.
+
+    `_database_string` is the full resource path ("projects/{p}/databases/{d}") and
+    is where an encoded id would become visible -- a healthy client reports
+    `.../databases/(default)`, the failing one would report
+    `.../databases/%28default%29`.
+
+    Every read is guarded: these are private attributes whose presence varies by
+    version, and a diagnostic must not raise inside _get_db()'s try block, where it
+    would be caught by the existing handler and disable Firebase logging entirely.
+    """
+    try:
+        fields = {}
+        for attr in ("project", "_database_string", "_database", "_client_options"):
+            try:
+                fields[attr] = repr(getattr(db, attr))
+            except Exception as e:
+                fields[attr] = f"<unreadable: {type(e).__name__}>"
+        print("[firebase_logger] DIAG client identity: "
+              + "  ".join(f"{k}={v}" for k, v in fields.items()), flush=True)
+    except Exception:
+        pass
 
 
 def _get_db():
@@ -46,10 +105,12 @@ def _get_db():
 
         _db = firestore.client()
         print("[firebase_logger] Connected to Firestore.")
+        _diag_client_identity(_db)
         return _db
 
     except Exception as e:
         print(f"[firebase_logger] Init failed, Firebase logging disabled: {e}")
+        _diag_traceback("_get_db")
         return None
 
 
@@ -86,6 +147,7 @@ def save_meta(pid: str, client_record: dict):
         _participant_ref(db, pid).set(fields, merge=True)
     except Exception as e:
         print(f"[firebase_logger] save_meta error: {e}")
+        _diag_traceback("save_meta")
 
 
 def save_logs(pid: str, response_list: list):
@@ -103,6 +165,7 @@ def save_logs(pid: str, response_list: list):
         print(f"[firebase_logger] Saved {len(response_list)} log entries for {pid}.")
     except Exception as e:
         print(f"[firebase_logger] save_logs error: {e}")
+        _diag_traceback("save_logs")
 
 
 def save_selected_subjects(pid: str, subjects: list):
@@ -115,6 +178,7 @@ def save_selected_subjects(pid: str, subjects: list):
         print(f"[firebase_logger] Saved {len(subjects)} selected subjects for {pid}.")
     except Exception as e:
         print(f"[firebase_logger] save_selected_subjects error: {e}")
+        _diag_traceback("save_selected_subjects")
 
 
 def save_task_submission(pid: str, verification_code: str, subjects: list, submitted_at=None,
@@ -156,6 +220,7 @@ def save_task_submission(pid: str, verification_code: str, subjects: list, submi
         print(f"[firebase_logger] Saved task submission for {pid}: {verification_code}")
     except Exception as e:
         print(f"[firebase_logger] save_task_submission error: {e}")
+        _diag_traceback("save_task_submission")
 
 
 def save_elicitation_submission(pid: str, verification_code: str, submitted_at=None,
@@ -181,6 +246,7 @@ def save_elicitation_submission(pid: str, verification_code: str, submitted_at=N
         print(f"[firebase_logger] Saved elicitation submission for {pid}: {verification_code}")
     except Exception as e:
         print(f"[firebase_logger] save_elicitation_submission error: {e}")
+        _diag_traceback("save_elicitation_submission")
 
 
 def save_refresh_event(pid: str, timestamp):
@@ -193,6 +259,7 @@ def save_refresh_event(pid: str, timestamp):
         print(f"[firebase_logger] Logged refresh event for {pid} at {timestamp}")
     except Exception as e:
         print(f"[firebase_logger] save_refresh_event error: {e}")
+        _diag_traceback("save_refresh_event")
 
 
 def save_priors(pid: str, priors: dict):
@@ -211,6 +278,7 @@ def save_priors(pid: str, priors: dict):
         print(f"[firebase_logger] Saved {len(priors)} prior(s) for {pid}.")
     except Exception as e:
         print(f"[firebase_logger] save_priors error: {e}")
+        _diag_traceback("save_priors")
 
 
 def load_priors(pid: str) -> dict:
@@ -237,4 +305,5 @@ def load_priors(pid: str) -> dict:
         return priors
     except Exception as e:
         print(f"[firebase_logger] load_priors error: {e}")
+        _diag_traceback("load_priors")
         return {}
